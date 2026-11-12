@@ -1,0 +1,1545 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Reconciliation — від setState до DOM</title>
+  <style>
+    :root {
+      --paper: #f3efe6;
+      --ink: #1c1714;
+      --muted: #6d645c;
+      --line: #e3d9cc;
+      --card: #fffdf8;
+      --component: #0f6e66;
+      --component-bg: #eef7f5;
+      --host: #b45309;
+      --host-bg: #fff6eb;
+      --text: #3f3a36;
+      --dom: #1d4ed8;
+      --dom-bg: #eef3ff;
+      --new: #157a3a;
+      --old: #b42318;
+      --change: #b86e00;
+      --move: #6d28d9;
+      --focus: #1d4ed8;
+      --shadow: 0 10px 30px rgba(40, 24, 8, 0.06);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(1200px 400px at 10% -10%, #fff 0%, transparent 50%),
+        var(--paper);
+      min-height: 100vh;
+    }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    code, pre { font-family: Consolas, "Cascadia Mono", ui-monospace, monospace; }
+
+    .wrap { max-width: 1480px; margin: 0 auto; padding: 18px 18px 88px; }
+
+    header h1 { margin: 0 0 4px; font-size: 22px; letter-spacing: -0.03em; }
+    .sub { margin: 0; max-width: 980px; color: var(--muted); line-height: 1.4; font-size: 14px; }
+    .sub a { color: var(--dom); }
+    .sources { margin: 8px 0 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 8px 14px; }
+    .sources a { color: var(--ink); font-size: 13px; }
+
+    .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 8px; }
+    .tabs button, .phases button, .bar button {
+      border: 1px solid var(--line);
+      background: var(--card);
+      color: var(--ink);
+      border-radius: 999px;
+      padding: 8px 12px;
+    }
+    .tabs button[aria-selected="true"] {
+      background: var(--ink);
+      color: #fff;
+      border-color: var(--ink);
+    }
+    .tabs small { display: block; color: inherit; opacity: 0.75; font-size: 11px; }
+
+    .phases { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; padding: 0; list-style: none; }
+    .phases button[aria-current="step"] { border-color: var(--focus); color: var(--focus); background: #eaf0ff; }
+    .legend { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; }
+    .pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      border-radius: 999px; padding: 3px 8px; font-size: 12px;
+      background: var(--card); border: 1px solid var(--line);
+    }
+    .sw { width: 9px; height: 9px; border-radius: 99px; display: inline-block; }
+    .sw.component { background: var(--component); }
+    .sw.host { background: var(--host); }
+    .sw.text { background: var(--text); }
+    .sw.now { background: var(--focus); }
+    .sw.changed { background: var(--change); }
+    .sw.new { background: var(--new); }
+    .sw.old { background: var(--old); }
+    .sw.moved { background: var(--move); }
+
+    main {
+      display: grid;
+      grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+    }
+    .side, .panel {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+    }
+    .side { padding: 14px; }
+    .kicker { margin: 0; color: var(--focus); font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+    .side h2 { margin: 4px 0 8px; font-size: 22px; letter-spacing: -0.03em; line-height: 1.2; }
+    .lead { margin: 0 0 10px; line-height: 1.5; }
+    .calls { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+    pre.code, pre.inspect {
+      margin: 0 0 10px;
+      padding: 10px;
+      background: #1c1714;
+      color: #f6efe4;
+      border-radius: 10px;
+      overflow: auto;
+      font-size: 12.5px;
+      line-height: 1.45;
+    }
+    .badges { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+    .badge { border-radius: 10px; padding: 6px 8px; background: #f6f1e8; font-size: 12.5px; }
+    .badge b { display: block; font-size: 11px; color: var(--muted); font-weight: 600; }
+    .badge.new { background: #e8f6ec; }
+    .badge.old { background: #fdecea; }
+    .badge.wait { background: #fff6e8; }
+    .doc { margin: 0; font-size: 12.5px; color: var(--muted); }
+    .doc a { color: var(--dom); }
+
+    .inspector { margin-top: 12px; }
+    .inspector h3, .panel h2 { margin: 0; font-size: 15px; }
+    .note { margin: 6px 0 10px; color: var(--muted); font-size: 12.5px; line-height: 1.4; }
+    .ops { margin: 6px 0 0; padding-left: 18px; }
+    .ops li { margin: 4px 0; }
+    .ops .skip { color: var(--muted); }
+    .ops.applied li:not(.skip)::marker { color: var(--new); }
+
+    .trees { display: grid; grid-template-columns: 1fr 1fr 0.95fr; gap: 12px; min-width: 0; }
+    .code-panel { grid-column: 1 / -1; max-height: none; }
+    #src {
+      margin: 0;
+      padding: 8px 0;
+      background: #1c1714;
+      color: #f6efe4;
+      border-radius: 10px;
+      overflow: auto;
+      max-height: 210px;
+      font-size: 12.5px;
+      line-height: 1.5;
+      position: relative;
+    }
+    .ln {
+      display: grid;
+      grid-template-columns: 2.4em minmax(0, 1fr);
+      gap: 10px;
+      padding: 0 10px;
+      white-space: pre;
+    }
+    .ln > span { color: #8d847b; text-align: right; user-select: none; }
+    .ln.hl { background: rgba(255, 186, 73, 0.22); }
+    .ln.hl code { color: #ffe3a3; }
+    .panel { padding: 12px; min-height: 240px; max-height: calc(100vh - 210px); overflow: auto; }
+    .panel.hot { border-color: #b9c8f5; }
+    .panel header p { margin: 4px 0 8px; color: var(--muted); font-size: 12.5px; line-height: 1.35; }
+    #code-file { color: var(--muted); font-weight: 600; font-size: 13px; margin-left: 6px; }
+    .empty-tree { color: var(--muted); padding: 12px 4px; line-height: 1.45; }
+
+    .node, .leaf {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 6px 8px;
+      margin: 6px 0;
+      background: #fff;
+    }
+    .node.component { background: var(--component-bg); border-color: #b7ddd7; }
+    .node.host { background: var(--host-bg); border-color: #f0d2b0; }
+    .leaf { background: #f7f5f2; }
+    .node header, .leaf { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+    .kind {
+      font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+      border-radius: 999px; padding: 1px 6px; background: #fff; border: 1px solid var(--line);
+    }
+    .component .kind { color: var(--component); }
+    .host .kind { color: var(--host); }
+    .key, .props, .istate, .wait, .cap { font-size: 12px; }
+    .key, .props, .wait, .cap { color: var(--muted); }
+    .istate { margin: 4px 0; color: var(--component); }
+    .kids { margin-left: 8px; padding-left: 8px; border-left: 1px dashed #e0d5c6; }
+    .node.now, .leaf.now { box-shadow: 0 0 0 2px var(--focus); }
+    .node.changed, .leaf.changed { box-shadow: 0 0 0 2px var(--change); }
+    .node.new, .leaf.new { box-shadow: 0 0 0 2px var(--new); }
+    .node.old, .leaf.old { box-shadow: 0 0 0 2px var(--old); }
+    .node.moved, .leaf.moved { box-shadow: 0 0 0 2px var(--move); }
+    .node.same, .leaf.same { box-shadow: 0 0 0 2px #a8a29e; }
+    .picked { outline: 2px solid #111; outline-offset: 2px; }
+
+    .live {
+      border: 1px dashed #cfc3b2;
+      border-radius: 12px;
+      padding: 10px;
+      margin-bottom: 8px;
+      background: #fff;
+    }
+    .live .clock h1 { margin: 0 0 8px; font-size: 22px; font-variant-numeric: tabular-nums; }
+    .live input { margin-left: 8px; width: 120px; padding: 4px 6px; border: 1px solid #ccc; border-radius: 6px; }
+    .live .counter { display: inline-block; border: 1px solid #bbb; border-radius: 8px; padding: 8px 12px; }
+    .live .fancy { border: 3px solid #c9a227; color: #b42318; }
+    .live ul { margin: 0; padding-left: 18px; }
+    .live li { margin: 6px 0; }
+    .live [data-mark="mutated"] { background: #fff3d6; }
+    .live [data-mark="inserted"] { background: #e5f6ea; }
+    .live [data-mark="moved"] { background: #f3e8ff; }
+    .live [data-mark="removed"] { background: #fdecea; }
+
+    .dnode { margin: 4px 0 4px 8px; }
+    .dhead, .dtext { font-family: Consolas, ui-monospace, monospace; font-size: 12.5px; }
+    .dnode > .dhead { padding: 3px 6px; border-radius: 6px; background: var(--dom-bg); }
+    .dkids { margin-left: 10px; border-left: 1px solid #d5def8; padding-left: 6px; }
+    .tag { color: var(--dom); font-weight: 700; }
+    .tok { color: var(--muted); }
+    .val { color: var(--change); }
+    .dnode.mutated > .dhead, .dtext.mutated { background: #fff3d6; }
+    .dnode.inserted > .dhead { background: #e5f6ea; }
+    .dnode.moved > .dhead { background: #f3e8ff; }
+    .dtext { padding: 2px 6px; }
+
+    .bar {
+      position: fixed; left: 0; right: 0; bottom: 0;
+      display: flex; gap: 8px; align-items: center; justify-content: center;
+      padding: 10px 16px;
+      background: rgba(255, 253, 248, 0.94);
+      border-top: 1px solid var(--line);
+      backdrop-filter: blur(8px);
+    }
+    .bar button.primary { background: var(--ink); color: white; border-color: var(--ink); }
+    #count { min-width: 72px; text-align: center; color: var(--muted); }
+    .hint { color: var(--muted); font-size: 12px; }
+
+    details { margin-top: 14px; color: var(--muted); }
+    details p { max-width: 900px; line-height: 1.5; }
+
+    @media (max-width: 1100px) {
+      main, .trees { grid-template-columns: 1fr; }
+      .panel { max-height: 75vh; }
+      .code-panel { max-height: none; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      * { scroll-behavior: auto !important; transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Reconciliation: від оновлення стану до DOM</h1>
+      <p class="sub">
+        Повторний рендер за react.dev: <strong>trigger</strong>, <strong>render</strong>, <strong>commit</strong>.
+        Render викликає компоненти й будує дерево елементів <code>{ type, key, ref, props }</code> — це опис, не вузли документа.
+        Diffing лише рахує операції. Документ змінюється на commit, кадр малює браузер.
+      </p>
+      <ul class="sources">
+        <li><a href="https://react.dev/learn/render-and-commit" target="_blank" rel="noreferrer">Render and Commit</a></li>
+        <li><a href="https://react.dev/reference/react/createElement" target="_blank" rel="noreferrer">createElement</a></li>
+        <li><a href="https://react.dev/learn/preserving-and-resetting-state" target="_blank" rel="noreferrer">Preserving and Resetting State</a></li>
+        <li><a href="https://legacy.reactjs.org/docs/reconciliation.html" target="_blank" rel="noreferrer">Reconciliation (алгоритм diffing)</a></li>
+      </ul>
+      <div class="tabs" id="tabs" role="tablist"></div>
+      <div class="phases" id="phases"></div>
+      <div class="legend">
+        <span class="pill"><i class="sw component"></i>компонент — type є функцією</span>
+        <span class="pill"><i class="sw host"></i>тег — type є рядком, опис DOM</span>
+        <span class="pill"><i class="sw text"></i>текст — рядок у props.children</span>
+        <span class="pill"><i class="sw now"></i>зараз у фокусі</span>
+        <span class="pill"><i class="sw changed"></i>зміна</span>
+        <span class="pill"><i class="sw new"></i>новий</span>
+        <span class="pill"><i class="sw old"></i>буде знищено</span>
+        <span class="pill"><i class="sw moved"></i>той самий вузол, інше місце</span>
+      </div>
+    </header>
+
+    <main>
+      <div class="side">
+        <p class="kicker" id="kicker"></p>
+        <h2 id="title"></h2>
+        <p class="lead" id="lead"></p>
+        <p class="calls" id="calls" hidden></p>
+        <div class="badges" id="badges"></div>
+        <p class="doc" id="doc"></p>
+        <div class="inspector">
+          <h3>Об'єкт елемента</h3>
+          <p class="note" id="inspect-note"></p>
+          <pre class="inspect" id="inspect"></pre>
+          <h3>Операції для DOM</h3>
+          <p class="note" id="ops-state"></p>
+          <ol class="ops" id="ops"></ol>
+        </div>
+      </div>
+      <div class="trees" id="trees">
+        <section class="panel code-panel" id="panel-code">
+          <header>
+            <h2>Код <span id="code-file"></span></h2>
+            <p>JSX цього компонента і є дерево елементів нижче. Підсвічено рядки поточного кроку.</p>
+          </header>
+          <div id="src"></div>
+        </section>
+        <section class="panel" id="panel-prev">
+          <header>
+            <h2>Попереднє дерево елементів</h2>
+            <p>Результат минулого render. React його не мутує: елементи незмінні.</p>
+          </header>
+          <div id="prev-tree"></div>
+        </section>
+        <section class="panel" id="panel-next">
+          <header>
+            <h2>Нове дерево елементів</h2>
+            <p id="next-caption">З'являється під час render. Документ поки не чіпається.</p>
+          </header>
+          <div id="next-tree"></div>
+        </section>
+        <section class="panel" id="panel-dom">
+          <header>
+            <h2>Реальний DOM</h2>
+            <p id="dom-status"></p>
+          </header>
+          <div id="live" class="live" aria-label="Живий фрагмент документа"></div>
+          <div id="dom-tree"></div>
+        </section>
+      </div>
+    </main>
+
+    <details>
+      <summary>Чому порівняння саме таке</summary>
+      <p>
+        Повне перетворення одного дерева на інше має складність порядку O(n³).
+        Для тисячі елементів це надто дорого. React використовує евристику O(n)
+        з двома припущеннями: елементи різного type дають різні дерева, а
+        <code>key</code> підказує, які діти стабільні між рендерами.
+        Алгоритм — деталь реалізації. Навіть якби React щоразу викликав усі компоненти,
+        на екрані лишився б той самий результат: у DOM потрапляють лише відмінності за цими правилами.
+        Ключ має бути стабільним, передбачуваним і унікальним серед сусідів.
+      </p>
+    </details>
+  </div>
+
+  <footer class="bar">
+    <button type="button" id="prev-btn">Назад</button>
+    <span id="count"></span>
+    <button type="button" id="reset-btn">Спочатку</button>
+    <button type="button" id="play-btn">Відтворити</button>
+    <button type="button" class="primary" id="next-btn">Далі</button>
+    <span class="hint">← →</span>
+  </footer>
+
+  <script>
+    window.__vizErrors = [];
+    window.addEventListener("error", (event) => {
+      window.__vizErrors.push(String(event.message));
+    });
+
+    const C = (id, type, props, children, extra = {}) => ({
+      id, kind: "component", type, props: props || {}, children: children || [], key: extra.key ?? null,
+      instanceState: extra.instanceState || null, notCalled: !!extra.notCalled,
+    });
+    const H = (id, type, props, children, extra = {}) => ({
+      id, kind: "host", type, props: props || {}, children: children || [], key: extra.key ?? null,
+      pendingChildren: !!extra.pendingChildren,
+    });
+    const T = (id, value) => ({ id, kind: "text", value });
+
+    function cloneMarked(node, marks = {}) {
+      if (!node) return null;
+      const copy = { ...node, mark: marks[node.id] || null };
+      if (node.props) copy.props = { ...node.props };
+      if (node.children) copy.children = node.children.map((child) => cloneMarked(child, marks));
+      return copy;
+    }
+
+    const clockPrev = C("app", "App", {}, [
+      C("clock", "Clock", { time: "10:00:01" }, [
+        H("box", "div", { className: "clock" }, [
+          H("heading", "h1", {}, [T("time", "10:00:01")]),
+          H("field", "input", { placeholder: "нотатка" }),
+        ]),
+      ]),
+    ]);
+    const clockNext = C("app", "App", {}, [
+      C("clock", "Clock", { time: "10:00:02" }, [
+        H("box", "div", { className: "clock" }, [
+          H("heading", "h1", {}, [T("time", "10:00:02")]),
+          H("field", "input", { placeholder: "нотатка" }),
+        ]),
+      ]),
+    ]);
+
+    const counterPrev = C("app", "App", {}, [
+      H("wrap", "section", {}, [
+        C("counter", "Counter", { isFancy: false }, [
+          H("box", "div", { className: "counter" }, [
+            H("heading", "h1", {}, [T("score", "3")]),
+          ]),
+        ], { instanceState: "score = 3" }),
+      ]),
+    ]);
+
+    function row(id, key, label) {
+      return H(id, "li", {}, [
+        H(id + "-label", "span", {}, [T(id + "-text", label)]),
+        H(id + "-input", "input", { placeholder: "нотатка" }),
+      ], { key });
+    }
+    const listPrev = H("list", "ul", {}, [row("duke", null, "Duke"), row("nova", null, "Villanova")]);
+    const listNextIndex = H("list", "ul", {}, [
+      row("a", null, "Connecticut"),
+      row("b", null, "Duke"),
+      row("c", null, "Villanova"),
+    ]);
+    const listPrevKeyed = H("list", "ul", {}, [row("duke", "2015", "Duke"), row("nova", "2016", "Villanova")]);
+    const listNextKeyed = H("list", "ul", {}, [
+      row("ct", "2014", "Connecticut"),
+      row("duke", "2015", "Duke"),
+      row("nova", "2016", "Villanova"),
+    ]);
+
+    const liveClock = () => [{
+      id: "clock-root", tag: "div", className: "clock", children: [
+        { id: "time-h1", tag: "h1", text: "10:00:01" },
+        { id: "note-input", tag: "input", value: "Привіт", placeholder: "нотатка" },
+      ],
+    }];
+    const liveClockNext = () => [{
+      id: "clock-root", tag: "div", className: "clock", children: [
+        { id: "time-h1", tag: "h1", text: "10:00:02" },
+        { id: "note-input", tag: "input", value: "Привіт", placeholder: "нотатка" },
+      ],
+    }];
+    const liveCounter = () => [{
+      id: "sec", tag: "section", children: [
+        { id: "box", tag: "div", className: "counter", children: [
+          { id: "score", tag: "h1", text: "3" },
+        ] },
+      ],
+    }];
+    const liveCounterNext = () => [{
+      id: "wrap", tag: "div", children: [
+        { id: "box2", tag: "div", className: "counter fancy", children: [
+          { id: "score2", tag: "h1", text: "0" },
+        ] },
+      ],
+    }];
+    function liveItem(id, label, value) {
+      return {
+        id, tag: "li", children: [
+          { id: id + "-label", tag: "span", text: label },
+          { id: id + "-input", tag: "input", value, placeholder: "нотатка" },
+        ],
+      };
+    }
+    const liveList = () => [{
+      id: "ul", tag: "ul", children: [liveItem("li-a", "Duke", "готуюсь"), liveItem("li-b", "Villanova", "")],
+    }];
+    const liveListIndex = () => [{
+      id: "ul", tag: "ul", children: [
+        liveItem("li-a", "Connecticut", "готуюсь"),
+        liveItem("li-b", "Duke", ""),
+        liveItem("li-c", "Villanova", ""),
+      ],
+    }];
+    const liveListKeyedBefore = () => [{
+      id: "ul", tag: "ul", children: [
+        liveItem("li-2015", "Duke", "готуюсь"),
+        liveItem("li-2016", "Villanova", ""),
+      ],
+    }];
+    const liveListKeyed = () => [{
+      id: "ul", tag: "ul", children: [
+        liveItem("li-2014", "Connecticut", ""),
+        liveItem("li-2015", "Duke", "готуюсь"),
+        liveItem("li-2016", "Villanova", ""),
+      ],
+    }];
+
+    const DOC = {
+      render: ["Render and Commit", "https://react.dev/learn/render-and-commit"],
+      element: ["createElement", "https://react.dev/reference/react/createElement"],
+      state: ["Preserving and Resetting State", "https://react.dev/learn/preserving-and-resetting-state"],
+      diff: ["Reconciliation", "https://legacy.reactjs.org/docs/reconciliation.html"],
+    };
+
+    const clockBadges = (domTime, stateTime) => ([
+      { tone: stateTime === "10:00:02" ? "new" : "", label: "стан App", value: "time = " + stateTime },
+      { tone: domTime === stateTime ? "new" : "wait", label: "текст у DOM", value: domTime },
+      { tone: "old", label: "value поля", value: "Привіт — лише в DOM" },
+    ]);
+
+    const scenarios = [
+      {
+        id: "same",
+        title: "Той самий type",
+        hint: "текст h1 змінюється, input ні",
+        prev: clockPrev,
+        initialLive: liveClock,
+        sourceFile: "App.js",
+        source: [
+          'import { useState } from "react";',
+          "",
+          "export default function App() {",
+          '  const [time, setTime] = useState("10:00:01");',
+          "",
+          "  function onTick() {",
+          '    setTime("10:00:02");',
+          "  }",
+          "",
+          "  return <Clock time={time} />;",
+          "}",
+          "",
+          "function Clock({ time }) {",
+          "  return (",
+          '    <div className="clock">',
+          "      <h1>{time}</h1>",
+          '      <input placeholder="нотатка" />',
+          "    </div>",
+          "  );",
+          "}",
+        ],
+        marks: [
+          [13, 14, 15, 16, 17, 18, 19, 20],
+          [7],
+          [3],
+          [10],
+          [13],
+          [15],
+          [16],
+          [17],
+          [15],
+          [16],
+          [17],
+          [16],
+          [16],
+        ],
+        steps: [
+          {
+            phase: "trigger",
+            title: "Що вже є після минулого commit",
+            lead: "На екрані результат попереднього render. Дерево ліворуч — React-елементи, об'єкти в пам'яті. Праворуч — справжні вузли цього документа. Поле вже містить «Привіт»: цього рядка немає в елементі input, він лежить у властивості DOM-вузла value. Можна дописати ще — наступні кроки це значення не перезаписують.",
+            badges: clockBadges("10:00:01", "10:00:01"),
+            focus: { tree: "prev", id: "field" },
+            doc: DOC.element,
+            live: liveClock,
+          },
+          {
+            phase: "trigger",
+            title: "Trigger: setState ставить render у чергу",
+            lead: "Є дві причини рендеру: перший показ і оновлення стану компонента або предка. Тут App викликає setTime. Стан уже новий, але React не змінює DOM у цей момент. Він лише ставить у чергу повторний рендер App. Той самий App лишається на тій самій позиції, тож стан не скидається до початкового.",
+            code: "setTime(new Date());",
+            calls: ["чергу: App"],
+            badges: clockBadges("10:00:01", "10:00:02"),
+            focus: { tree: "prev", id: "app" },
+            doc: DOC.render,
+            live: liveClock,
+          },
+          {
+            phase: "render",
+            title: "Render: React викликає App",
+            lead: "Rendering — це виклик компонентів. На повторному рендері React викликає функцію, чий стан змінився. Поки функція не повернула елементи, нового дерева немає. Документ і далі показує 10:00:01.",
+            calls: ["App()"],
+            badges: clockBadges("10:00:01", "10:00:02"),
+            doc: DOC.render,
+            live: liveClock,
+          },
+          {
+            phase: "render",
+            title: "App повертає елемент Clock",
+            lead: "Повернене значення — елемент, легкий опис. type: Clock означає функцію, не тег. Створення цього об'єкта не викликає Clock і не створює DOM. key і ref тут null, проп time уже новий. Старий елемент Clock React не змінює.",
+            calls: ["App()"],
+            code: "return <Clock time=\"10:00:02\" />;",
+            badges: clockBadges("10:00:01", "10:00:02"),
+            next: C("app", "App", {}, [
+              C("clock", "Clock", { time: "10:00:02" }, [], { notCalled: true }),
+            ]),
+            nextMarks: { app: "now", clock: "now" },
+            focus: { tree: "next", id: "clock" },
+            doc: DOC.element,
+            live: liveClock,
+          },
+          {
+            phase: "render",
+            title: "Той самий компонент — React викликає Clock",
+            lead: "Виклик рекурсивний: якщо оновлений компонент повернув інший компонент, React рендерить і його. Clock стоїть на тій самій позиції і має той самий type, тому це не новий екземпляр. Функція отримує нові пропси. У Strict Mode під час розробки React може викликати функцію двічі, щоб виявити нечистий render. Другого commit через це немає.",
+            calls: ["App()", "Clock({ time: \"10:00:02\" })"],
+            badges: clockBadges("10:00:01", "10:00:02"),
+            next: C("app", "App", {}, [
+              C("clock", "Clock", { time: "10:00:02" }, [], { notCalled: true }),
+            ]),
+            nextMarks: { clock: "now" },
+            focus: { tree: "next", id: "clock" },
+            doc: DOC.render,
+            live: liveClock,
+          },
+          {
+            phase: "render",
+            title: "З чого складається дерево, яке повернув Clock",
+            lead: "Функція повертає дерево цілком. Нижче воно розкрите ззовні всередину, щоб було видно склад. Вкладені елементи створюються під час цього виклику. Жоден із цих об'єктів ще не є вузлом документа. div описує майбутній вузол: type — рядок \"div\", className лежить у props.",
+            calls: ["Clock({ time: \"10:00:02\" })"],
+            next: C("app", "App", {}, [
+              C("clock", "Clock", { time: "10:00:02" }, [
+                H("box", "div", { className: "clock" }, [], { pendingChildren: true }),
+              ]),
+            ]),
+            nextMarks: { box: "now" },
+            focus: { tree: "next", id: "box" },
+            doc: DOC.element,
+            live: liveClock,
+          },
+          {
+            phase: "render",
+            title: "Дочірній елемент h1 і текстовий рядок",
+            lead: "Текст не є окремим React-елементом із власним type. Це рядок у props.children батька. У документі для нього буде текстовий вузол, але не зараз: render лише описує, що текст має стати \"10:00:02\".",
+            next: C("app", "App", {}, [
+              C("clock", "Clock", { time: "10:00:02" }, [
+                H("box", "div", { className: "clock" }, [
+                  H("heading", "h1", {}, [T("time", "10:00:02")]),
+                ]),
+              ]),
+            ]),
+            nextMarks: { heading: "now", time: "changed" },
+            focus: { tree: "next", id: "heading" },
+            doc: DOC.element,
+            live: liveClock,
+          },
+          {
+            phase: "render",
+            title: "Input на тій самій позиції. Render закінчено",
+            lead: "Другий дитина div — елемент input без дітей. Набраного тексту в props немає: неконтрольоване поле тримає його в DOM. React уже знає повне нове дерево і може порахувати різницю. До commit він нічого з цією різницею не робить.",
+            next: clockNext,
+            nextMarks: { field: "now" },
+            focus: { tree: "next", id: "field" },
+            badges: clockBadges("10:00:01", "10:00:02"),
+            doc: DOC.render,
+            live: liveClock,
+          },
+          {
+            phase: "diff",
+            title: "Diffing: спочатку два корені",
+            lead: "React порівнює попередній результат із новим. Обидва корені host-дерева мають type \"div\". Різний type означав би знищити старе піддерево і зібрати нове. Тут type той самий, тож базовий DOM-вузол лишається. Атрибут className теж той самий. Якби змінилися лише className або окремі поля style, React оновив би тільки їх.",
+            prevMarks: { box: "now" },
+            next: clockNext,
+            nextMarks: { box: "same" },
+            focus: { tree: "next", id: "box" },
+            spotlight: "trees",
+            doc: DOC.diff,
+            live: liveClock,
+            ops: [{ kind: "skip", text: "div.clock: type і атрибути ті самі, вузол зберігається" }],
+            opsState: "planned",
+          },
+          {
+            phase: "diff",
+            title: "Діти за позицією: текст h1 інший",
+            lead: "Після вузла React іде в дітей. Без key діти зіставляються за індексом. Обидва елементи на позиції 0 мають type \"h1\". Різниться лише текстова дитина: \"10:00:01\" і \"10:00:02\". У список операцій потрапляє оновлення тексту. Сам h1 не перестворюється.",
+            prevMarks: { heading: "now", time: "changed" },
+            next: clockNext,
+            nextMarks: { heading: "now", time: "changed" },
+            focus: { tree: "next", id: "time" },
+            spotlight: "trees",
+            doc: DOC.diff,
+            live: liveClock,
+            ops: [
+              { kind: "skip", text: "div.clock: без змін" },
+              { kind: "update", text: "h1: текст \"10:00:01\" → \"10:00:02\"" },
+            ],
+            opsState: "planned",
+          },
+          {
+            phase: "diff",
+            title: "Input у тому ж місці — операції немає",
+            lead: "На позиції 1 знову type \"input\", і props не змінилися. Новий елемент — інший об'єкт у пам'яті, але він описує той самий DOM-вузол. React не чіпатиме value. Саме тому в прикладі з годинником на react.dev текст, набраний у полі, не зникає, коли щосекунди змінюється h1.",
+            prevMarks: { field: "same" },
+            next: clockNext,
+            nextMarks: { field: "same", heading: "changed" },
+            focus: { tree: "next", id: "field" },
+            spotlight: "trees",
+            doc: DOC.render,
+            live: liveClock,
+            ops: [
+              { kind: "update", text: "h1: текст \"10:00:01\" → \"10:00:02\"" },
+              { kind: "skip", text: "input: props ті самі, value не записується" },
+            ],
+            opsState: "planned",
+          },
+          {
+            phase: "commit",
+            title: "Commit: єдина зміна потрапляє в документ",
+            lead: "Після render React змінює документ. Перший показ створює вузли і вставляє їх через appendChild. Повторний рендер застосовує лише мінімальні операції, пораховані під час render. Текст h1 став 10:00:02. Вузол input той самий, value на місці.",
+            next: clockNext,
+            nextMarks: { time: "changed", field: "same" },
+            focus: { tree: "next", id: "time" },
+            spotlight: "dom",
+            doc: DOC.render,
+            live: liveClockNext,
+            domMarks: { "time-h1": "mutated", "time-h1:text": "mutated", "note-input": "same" },
+            badges: [
+              { tone: "new", label: "стан App", value: "time = 10:00:02" },
+              { tone: "new", label: "текст у DOM", value: "10:00:02" },
+              { tone: "old", label: "value поля", value: "не перезаписано" },
+            ],
+            ops: [
+              { kind: "update", text: "h1: текст \"10:00:01\" → \"10:00:02\"" },
+              { kind: "skip", text: "input: операції не було" },
+            ],
+            opsState: "applied",
+            domStatus: "Commit застосовано. Браузер іще малює наступний кадр.",
+          },
+          {
+            phase: "paint",
+            title: "Paint робить браузер, не React",
+            lead: "Після commit браузер перемальовує кадр. У документації це називають paint, щоб не плутати з render. Якщо результат render збігся з попереднім, React не чіпає DOM, і браузеру немає що малювати заново. Тут змінився лише текст заголовка.",
+            next: clockNext,
+            nextMarks: { time: "changed" },
+            spotlight: "dom",
+            doc: DOC.render,
+            live: liveClockNext,
+            domMarks: { "time-h1": "mutated", "time-h1:text": "mutated" },
+            badges: clockBadges("10:00:02", "10:00:02"),
+            ops: [{ kind: "update", text: "h1 уже оновлено в документі" }],
+            opsState: "applied",
+            domStatus: "Кадр намальовано. Користувач бачить 10:00:02, поле лишилось тим самим вузлом.",
+          },
+        ],
+      },
+      {
+        id: "type",
+        title: "Інший type",
+        hint: "section → div скидає Counter",
+        prev: counterPrev,
+        initialLive: liveCounter,
+        sourceFile: "App.js",
+        source: [
+          'import { useState } from "react";',
+          "",
+          "export default function App() {",
+          "  const [isFancy, setIsFancy] = useState(false);",
+          "",
+          "  function onToggle() {",
+          "    setIsFancy(true);",
+          "  }",
+          "",
+          "  if (isFancy) {",
+          "    return (",
+          "      <div>",
+          "        <Counter isFancy={true} />",
+          "      </div>",
+          "    );",
+          "  }",
+          "",
+          "  return (",
+          "    <section>",
+          "      <Counter isFancy={false} />",
+          "    </section>",
+          "  );",
+          "}",
+          "",
+          "function Counter({ isFancy }) {",
+          "  const [score, setScore] = useState(0);",
+          "",
+          '  const className = isFancy ? "counter fancy" : "counter";',
+          "",
+          "  return (",
+          "    <div className={className}>",
+          "      <h1>{score}</h1>",
+          "    </div>",
+          "  );",
+          "}",
+        ],
+        marks: [
+          [18, 19, 20, 21, 26, 32],
+          [7],
+          [10, 11, 12, 13, 14, 15],
+          [12, 19],
+          [25, 26, 28, 31, 32],
+          [12, 31, 32],
+          [32],
+        ],
+        steps: [
+          {
+            phase: "trigger",
+            title: "Counter живе на позиції всередині section",
+            lead: "Стан прив'язаний до позиції в дереві, а не до об'єкта елемента. score = 3 тримає React для цього Counter. У самому елементі є лише type, key, ref і props. Зараз props.isFancy дорівнює false.",
+            badges: [
+              { label: "позиція", value: "section → Counter" },
+              { tone: "old", label: "стан Counter", value: "score = 3" },
+              { label: "DOM", value: "3" },
+            ],
+            focus: { tree: "prev", id: "counter" },
+            doc: DOC.state,
+            live: liveCounter,
+          },
+          {
+            phase: "trigger",
+            title: "Trigger: setIsFancy(true)",
+            lead: "Оновлюється стан App. DOM і далі показує 3, старий Counter іще змонтований. Render лише в черзі.",
+            code: "setIsFancy(true);",
+            badges: [
+              { tone: "new", label: "стан App", value: "isFancy = true" },
+              { tone: "old", label: "стан Counter", value: "score = 3, ще живий" },
+              { tone: "wait", label: "DOM", value: "3" },
+            ],
+            doc: DOC.render,
+            live: liveCounter,
+          },
+          {
+            phase: "render",
+            title: "App повертає інший type на тій самій позиції",
+            lead: "React викликає App. Той повертає div, усередині якого елемент Counter. Counter іще не викликано: елемент із функцією в type — інструкція, не виклик. Поруч лишається попереднє дерево, де на цій позиції стоїть section.",
+            calls: ["App()"],
+            code: "return (\n  <div>\n    <Counter isFancy={true} />\n  </div>\n);",
+            next: C("app", "App", {}, [
+              H("wrap", "div", {}, [
+                C("counter", "Counter", { isFancy: true }, [], { notCalled: true }),
+              ]),
+            ]),
+            nextMarks: { wrap: "now" },
+            focus: { tree: "next", id: "wrap" },
+            doc: DOC.element,
+            live: liveCounter,
+          },
+          {
+            phase: "diff",
+            title: "Різний type: піддерева не зіставляються",
+            lead: "Diff починається з двох коренів позиції. Було section, стало div. Перше припущення алгоритму: різний type означає різні дерева. React не намагається перенести дітей зі старого дерева в нове. Усе старе піддерево, включно з Counter і score = 3, буде знято. Нове піддерево буде зібрано з нуля.",
+            prevMarks: { wrap: "old", counter: "old", box: "old", heading: "old", score: "old" },
+            next: C("app", "App", {}, [
+              H("wrap", "div", {}, [
+                C("counter", "Counter", { isFancy: true }, [], { notCalled: true }),
+              ]),
+            ]),
+            nextMarks: { wrap: "new", counter: "new" },
+            focus: { tree: "prev", id: "wrap" },
+            spotlight: "trees",
+            doc: DOC.diff,
+            live: liveCounter,
+            ops: [
+              { kind: "remove", text: "зняти section і нащадків; стан Counter знищується" },
+              { kind: "insert", text: "зібрати нове піддерево від div" },
+            ],
+            opsState: "planned",
+          },
+          {
+            phase: "render",
+            title: "Новий Counter викликається з початковим станом",
+            lead: "Це вже інша позиція в новому дереві, тож React монтує новий Counter і викликає функцію. useState(0) дає score = 0, а не 3. Якби на місці лишився той самий type, React оновив би props і зберіг би score. Скидання сталось не через новий prop isFancy, а через зміну type батька.",
+            calls: ["App()", "Counter({ isFancy: true })  // новий екземпляр"],
+            next: C("app", "App", {}, [
+              H("wrap", "div", {}, [
+                C("counter", "Counter", { isFancy: true }, [
+                  H("box", "div", { className: "counter fancy" }, [
+                    H("heading", "h1", {}, [T("score", "0")]),
+                  ]),
+                ], { instanceState: "score = 0, початковий" }),
+              ]),
+            ]),
+            nextMarks: { counter: "new", box: "new", score: "new" },
+            prevMarks: { counter: "old" },
+            focus: { tree: "next", id: "counter" },
+            doc: DOC.state,
+            live: liveCounter,
+            badges: [
+              { tone: "old", label: "старий Counter", value: "буде знищено разом із score = 3" },
+              { tone: "new", label: "новий Counter", value: "score = 0" },
+              { tone: "wait", label: "DOM", value: "ще показує 3" },
+            ],
+          },
+          {
+            phase: "commit",
+            title: "Commit замінює вузли документа",
+            lead: "Старі DOM-вузли прибираються, нові вставляються. Ідентифікатори n# у правому дереві інші: це не ті самі об'єкти вузлів. Текст 0 з'являється не як правка старого h1, а як вміст нового вузла.",
+            next: C("app", "App", {}, [
+              H("wrap", "div", {}, [
+                C("counter", "Counter", { isFancy: true }, [
+                  H("box", "div", { className: "counter fancy" }, [
+                    H("heading", "h1", {}, [T("score", "0")]),
+                  ]),
+                ], { instanceState: "score = 0" }),
+              ]),
+            ]),
+            nextMarks: { wrap: "new", box: "new" },
+            spotlight: "dom",
+            doc: DOC.diff,
+            live: liveCounterNext,
+            domMarks: { wrap: "inserted", box2: "inserted", score2: "inserted", "score2:text": "inserted" },
+            ops: [
+              { kind: "remove", text: "section і старий div.counter прибрані з документа" },
+              { kind: "insert", text: "вставлено новий div і новий h1 з текстом 0" },
+            ],
+            opsState: "applied",
+            domStatus: "Commit замінив піддерево. Paint іще попереду.",
+            badges: [
+              { tone: "new", label: "стан", value: "score = 0" },
+              { tone: "new", label: "DOM", value: "нові вузли, текст 0" },
+            ],
+          },
+          {
+            phase: "paint",
+            title: "На кадрі вже новий Counter",
+            lead: "Браузер малює те, що commit поклав у документ. Старого score більше немає ні в стані, ні в DOM: структура дерева між рендерами не збіглася.",
+            spotlight: "dom",
+            doc: DOC.state,
+            live: liveCounterNext,
+            domMarks: { wrap: "inserted", score2: "inserted" },
+            ops: [{ kind: "insert", text: "нове піддерево вже в документі" }],
+            opsState: "applied",
+            domStatus: "Кадр намальовано. На екрані 0.",
+          },
+        ],
+      },
+      {
+        id: "index",
+        title: "Діти без key",
+        hint: "вставка на початок міняє кожну позицію",
+        prev: listPrev,
+        initialLive: liveList,
+        sourceFile: "List.js",
+        source: [
+          'import { useState } from "react";',
+          "",
+          "export default function List() {",
+          '  const [teams, setTeams] = useState(["Duke", "Villanova"]);',
+          "",
+          "  function prepend() {",
+          '    setTeams(["Connecticut", "Duke", "Villanova"]);',
+          "  }",
+          "",
+          "  return (",
+          "    <ul>",
+          "      {teams.map((name) => (",
+          "        <li>",
+          "          <span>{name}</span>",
+          '          <input placeholder="нотатка" />',
+          "        </li>",
+          "      ))}",
+          "    </ul>",
+          "  );",
+          "}",
+        ],
+        marks: [
+          [4, 13, 14, 15],
+          [7],
+          [12, 13, 14, 15, 16],
+          [11],
+          [13, 14],
+          [13, 14, 15, 16],
+          [13, 14],
+          [13, 14],
+        ],
+        steps: [
+          {
+            phase: "trigger",
+            title: "Два li. Поле першого вже заповнене",
+            lead: "Приклад із документації reconciliation: Duke, Villanova, і перед ними з'явиться Connecticut. Поки що дітей два. У першому полі набрано «готуюсь» — це value DOM-вузла. Допишіть свій текст: без key він залишиться на першій позиції, а не поїде разом із Duke.",
+            focus: { tree: "prev", id: "duke" },
+            doc: DOC.diff,
+            live: liveList,
+            badges: [
+              { label: "позиція 0", value: "Duke" },
+              { label: "позиція 1", value: "Villanova" },
+            ],
+          },
+          {
+            phase: "trigger",
+            title: "Trigger: у стан списку додали елемент на початок",
+            lead: "setState знову лише ставить render у чергу. Обидва наявні li і їхні input лишаються в документі.",
+            code: "setItems([connecticut, duke, villanova]);",
+            doc: DOC.render,
+            live: liveList,
+          },
+          {
+            phase: "render",
+            title: "Нове дерево: три li без key",
+            lead: "Компонент списку повернув ul із трьома елементами li. key у всіх null. Для React це не «ті самі команди», а діти, яких він зіставлятиме за порядком. Кожен li складається з span із текстом і input.",
+            next: listNextIndex,
+            nextMarks: { list: "now" },
+            focus: { tree: "next", id: "list" },
+            doc: DOC.element,
+            live: liveList,
+          },
+          {
+            phase: "diff",
+            title: "ul той самий. Далі діти за індексом",
+            lead: "Корені мають той самий type \"ul\", атрибути не змінилися, вузол списку зберігається. Далі React іде двома списками дітей одночасно. key немає, тож пара утворюється за індексом, а не за назвою команди.",
+            prevMarks: { list: "same" },
+            next: listNextIndex,
+            nextMarks: { list: "same" },
+            focus: { tree: "next", id: "list" },
+            spotlight: "trees",
+            doc: DOC.diff,
+            live: liveList,
+            ops: [{ kind: "skip", text: "ul: той самий вузол" }],
+            opsState: "planned",
+          },
+          {
+            phase: "diff",
+            title: "Індекс 0: Duke перетворюється на Connecticut",
+            lead: "Обидва елементи мають type \"li\", тому вузол не знищується. Змінюється текст. Input на тій самій дочірній позиції теж переживає: React не створює новий вузол поля. Набране value залишиться у першого рядка, хоча підпис уже буде Connecticut.",
+            prevMarks: { duke: "changed", "duke-text": "changed" },
+            next: listNextIndex,
+            nextMarks: { a: "changed", "a-text": "changed" },
+            focus: { tree: "next", id: "a" },
+            spotlight: "trees",
+            doc: DOC.diff,
+            live: liveList,
+            ops: [
+              { kind: "skip", text: "ul без змін" },
+              { kind: "update", text: "індекс 0: текст Duke → Connecticut, той самий li" },
+            ],
+            opsState: "planned",
+          },
+          {
+            phase: "diff",
+            title: "Індекс 1 і новий хвіст списку",
+            lead: "Індекс 1 так само той самий type, тож другий наявний li змінює текст із Villanova на Duke. Третього старого елемента немає — React вставить новий li. Алгоритм не розуміє, що Duke і Villanova можна було просто зсунути.",
+            prevMarks: { nova: "changed" },
+            next: listNextIndex,
+            nextMarks: { b: "changed", c: "new" },
+            focus: { tree: "next", id: "c" },
+            spotlight: "trees",
+            doc: DOC.diff,
+            live: liveList,
+            ops: [
+              { kind: "update", text: "індекс 0: Duke → Connecticut" },
+              { kind: "update", text: "індекс 1: Villanova → Duke" },
+              { kind: "insert", text: "індекс 2: новий li Villanova" },
+            ],
+            opsState: "planned",
+          },
+          {
+            phase: "commit",
+            title: "Commit записує мутації в ті самі вузли",
+            lead: "Перші два li мають ті самі ідентифікатори n#, змінився лише їхній текст. Новий вузол один — у кінці. Поле з «готуюсь» лишилося на першій позиції. Індекс як key працює, лише поки порядок стабільний. Вставка на початок, видалення з середини і перестановка змушують стан і неконтрольовані поля жити за позицією, а не за даними.",
+            next: listNextIndex,
+            nextMarks: { a: "changed", b: "changed", c: "new" },
+            spotlight: "dom",
+            doc: DOC.diff,
+            live: liveListIndex,
+            domMarks: {
+              "li-a": "mutated", "li-a-label": "mutated", "li-a-label:text": "mutated",
+              "li-b": "mutated", "li-b-label": "mutated", "li-b-label:text": "mutated",
+              "li-c": "inserted",
+            },
+            ops: [
+              { kind: "update", text: "два наявні li: замінено текст" },
+              { kind: "insert", text: "один новий li в кінці" },
+              { kind: "skip", text: "value першого input не записувалось і лишилось на індексі 0" },
+            ],
+            opsState: "applied",
+            domStatus: "Commit змінив текст у старих вузлах і додав один li.",
+          },
+          {
+            phase: "paint",
+            title: "На кадрі підписи вже не збігаються з полями",
+            lead: "Paint показує документ після commit. Connecticut стоїть першим, але value першого поля — це стара нотатка Duke. Наступний сценарій ті самі дані зіставляє за key.",
+            spotlight: "dom",
+            doc: DOC.diff,
+            live: liveListIndex,
+            domMarks: { "li-a": "mutated", "li-c": "inserted" },
+            ops: [{ kind: "update", text: "документ уже містить три li" }],
+            opsState: "applied",
+            domStatus: "Кадр намальовано.",
+          },
+        ],
+      },
+      {
+        id: "key",
+        title: "Діти з key",
+        hint: "2014 встає першим, 2015 і 2016 їдуть разом",
+        prev: listPrevKeyed,
+        initialLive: liveListKeyedBefore,
+        sourceFile: "List.js",
+        source: [
+          'import { useState } from "react";',
+          "",
+          "const initial = [",
+          '  { id: "2015", name: "Duke" },',
+          '  { id: "2016", name: "Villanova" },',
+          "];",
+          "",
+          "export default function List() {",
+          "  const [teams, setTeams] = useState(initial);",
+          "",
+          "  function prepend() {",
+          "    setTeams([",
+          '      { id: "2014", name: "Connecticut" },',
+          '      { id: "2015", name: "Duke" },',
+          '      { id: "2016", name: "Villanova" },',
+          "    ]);",
+          "  }",
+          "",
+          "  return (",
+          "    <ul>",
+          "      {teams.map((team) => (",
+          "        <li key={team.id}>",
+          "          <span>{team.name}</span>",
+          '          <input placeholder="нотатка" />',
+          "        </li>",
+          "      ))}",
+          "    </ul>",
+          "  );",
+          "}",
+        ],
+        marks: [
+          [4, 5, 22],
+          [12, 13, 14, 15, 16],
+          [22],
+          [22],
+          [22],
+          [22],
+        ],
+        steps: [
+          {
+            phase: "trigger",
+            title: "Ті самі рядки, але в елемента є key",
+            lead: "key — не props.key. React забирає його на сам елемент. Компонент не може запитати свій key. Ключ унікальний серед сусідів, не в усьому документі. Тут key — рік, стабільний ідентифікатор рядка.",
+            focus: { tree: "prev", id: "duke" },
+            doc: DOC.diff,
+            live: liveListKeyedBefore,
+            badges: [
+              { label: "key 2015", value: "Duke" },
+              { label: "key 2016", value: "Villanova" },
+            ],
+          },
+          {
+            phase: "trigger",
+            title: "Trigger той самий: Connecticut на початку",
+            lead: "Дані ті самі, що в сценарії без key. Інший лише ідентифікатор, який побачить diff. DOM до commit не змінюється. Поле першого рядка знову можна редагувати.",
+            code: "<li key={item.id}>{item.name}<input /></li>",
+            doc: DOC.render,
+            live: liveListKeyedBefore,
+          },
+          {
+            phase: "render",
+            title: "Нові елементи несуть key поза props",
+            lead: "Повернутий ul містить три елементи. У інспекторі key стоїть поруч із type, не всередині props. Рядок \"2014\" раніше не зустрічався. \"2015\" і \"2016\" уже були.",
+            next: listNextKeyed,
+            nextMarks: { ct: "now", duke: "same", nova: "same" },
+            focus: { tree: "next", id: "ct" },
+            doc: DOC.element,
+            live: liveListKeyedBefore,
+          },
+          {
+            phase: "diff",
+            title: "Діти зіставляються за key, не за індексом",
+            lead: "ul той самий. Для дітей із key React шукає в попередньому списку той самий key. Збіг означає той самий елемент, навіть якщо індекс інший. Відсутній у новому списку key був би знищений. Новий key буде змонтований.",
+            prevMarks: { duke: "same", nova: "same" },
+            next: listNextKeyed,
+            nextMarks: { ct: "new", duke: "moved", nova: "moved" },
+            focus: { tree: "next", id: "duke" },
+            spotlight: "trees",
+            doc: DOC.diff,
+            live: liveListKeyedBefore,
+            ops: [
+              { kind: "insert", text: "key \"2014\": нового відповідника не було, це вставка" },
+              { kind: "move", text: "key \"2015\" Duke: той самий елемент, інший індекс" },
+              { kind: "move", text: "key \"2016\" Villanova: той самий елемент, інший індекс" },
+            ],
+            opsState: "planned",
+          },
+          {
+            phase: "commit",
+            title: "Commit вставляє один вузол і переставляє два старі",
+            lead: "Новий li — Connecticut, порожнє поле. Duke і Villanova — ті самі DOM-вузли, що й до оновлення: їхні n# не змінилися, value поїхало разом із ними. Текст цих двох рядків переписувати не довелось. Нестабільний key, наприклад Math.random() на кожен render, не збігся б ні з чим, і React перестворив би весь список.",
+            next: listNextKeyed,
+            nextMarks: { ct: "new", duke: "moved", nova: "moved" },
+            spotlight: "dom",
+            doc: DOC.diff,
+            live: liveListKeyed,
+            domMarks: { "li-2014": "inserted", "li-2015": "moved", "li-2016": "moved" },
+            ops: [
+              { kind: "insert", text: "новий вузол для key 2014" },
+              { kind: "move", text: "наявні вузли 2015 і 2016 змінили порядок" },
+              { kind: "skip", text: "текст Duke і Villanova не переписувався" },
+            ],
+            opsState: "applied",
+            domStatus: "Commit: одна вставка і перестановка наявних вузлів.",
+            badges: [
+              { tone: "new", label: "2014", value: "новий вузол, порожнє поле" },
+              { tone: "old", label: "2015", value: "той самий вузол, value на місці" },
+            ],
+          },
+          {
+            phase: "paint",
+            title: "Кадр збігається з даними",
+            lead: "Після paint Connecticut перший, а нотатка лишилась у Duke. key не прискорює сам кадр магією: він дає алгоритму правильну пару між старим і новим деревом, тож commit не переписує те, що не змінювалось.",
+            spotlight: "dom",
+            doc: DOC.diff,
+            live: liveListKeyed,
+            domMarks: { "li-2014": "inserted", "li-2015": "moved", "li-2016": "moved" },
+            ops: [{ kind: "move", text: "порядок у документі вже новий" }],
+            opsState: "applied",
+            domStatus: "Кадр намальовано.",
+          },
+        ],
+      },
+    ];
+
+    const phaseOrder = ["trigger", "render", "commit", "paint"];
+    const phaseLabel = { trigger: "Trigger", render: "Render", commit: "Commit", paint: "Paint" };
+    function phaseGroup(phase) { return phase === "diff" ? "render" : phase; }
+
+    const tabsEl = document.getElementById("tabs");
+    const phasesEl = document.getElementById("phases");
+    const liveEl = document.getElementById("live");
+    const domTreeEl = document.getElementById("dom-tree");
+    let scenarioIndex = 0;
+    let stepIndex = 0;
+    let timer = 0;
+    let pool = new Map();
+    let textPool = new Map();
+    let tokenSeq = 1;
+    let nodeIndex = new Map();
+    let selected = null;
+    let selectedTree = "";
+
+    function esc(value) {
+      return String(value).replace(/[&<>"']/g, (ch) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+      }[ch]));
+    }
+
+    function current() { return scenarios[scenarioIndex]; }
+    function step() { return current().steps[stepIndex]; }
+
+    function resetPool() {
+      pool = new Map();
+      textPool = new Map();
+      tokenSeq = 1;
+      liveEl.replaceChildren();
+    }
+
+    function setOnlyText(el, text) {
+      let record = textPool.get(el.dataset.id);
+      if (!record) {
+        record = { node: document.createTextNode(text), token: tokenSeq++ };
+        textPool.set(el.dataset.id, record);
+      } else if (record.node.nodeValue !== text) {
+        record.node.nodeValue = text;
+      }
+      if (el.childNodes.length !== 1 || el.firstChild !== record.node) el.replaceChildren(record.node);
+    }
+
+    function sync(parent, specs) {
+      const list = specs || [];
+      const wanted = new Set(list.map((item) => item.id));
+      [...parent.children].forEach((child) => {
+        if (!wanted.has(child.dataset.id)) parent.removeChild(child);
+      });
+      list.forEach((spec) => {
+        let record = pool.get(spec.id);
+        if (!record) {
+          const el = document.createElement(spec.tag);
+          el.dataset.id = spec.id;
+          if (spec.tag === "input") {
+            el.value = spec.value || "";
+            el.autocomplete = "off";
+          }
+          record = { el, token: tokenSeq++ };
+          pool.set(spec.id, record);
+        }
+        const el = record.el;
+        el.className = spec.className || "";
+        if (spec.placeholder) el.placeholder = spec.placeholder;
+        if (spec.text != null) setOnlyText(el, spec.text);
+        else {
+          [...el.childNodes].forEach((node) => {
+            if (node.nodeType !== 1) node.remove();
+          });
+          sync(el, spec.children || []);
+        }
+        parent.appendChild(el);
+      });
+    }
+
+    function applyMarks(marks) {
+      pool.forEach((record) => { delete record.el.dataset.mark; });
+      if (!marks) return;
+      Object.entries(marks).forEach(([id, mark]) => {
+        if (id.endsWith(":text")) return;
+        const record = pool.get(id);
+        if (record && mark && mark !== "same") record.el.dataset.mark = mark;
+      });
+    }
+
+    function describe(el, marks) {
+      const id = el.dataset.id;
+      const token = pool.get(id)?.token;
+      const mark = marks?.[id] || "";
+      const bits = [
+        `<span class="tag">${esc(el.tagName.toLowerCase())}</span>`,
+        `<span class="tok">n${token}</span>`,
+      ];
+      if (el.className) bits.push(`<span class="cls">.${esc([...el.classList].join("."))}</span>`);
+      if (el.tagName === "INPUT") bits.push(`<span class="val">value=${esc(JSON.stringify(el.value))}</span>`);
+      let kids = "";
+      el.childNodes.forEach((child) => {
+        if (child.nodeType === 3) {
+          const textToken = textPool.get(id)?.token;
+          const textMark = marks?.[id + ":text"] || "";
+          kids += `<div class="dtext ${esc(textMark)}"><span class="tag">#text</span> <span class="tok">n${textToken}</span> ${esc(JSON.stringify(child.nodeValue))}</div>`;
+        } else if (child.nodeType === 1) kids += describe(child, marks);
+      });
+      return `<div class="dnode ${esc(mark)}"><div class="dhead">${bits.join(" ")}</div>${kids ? `<div class="dkids">${kids}</div>` : ""}</div>`;
+    }
+
+    function propsLine(props) {
+      const parts = Object.entries(props || {}).map(([key, value]) => `${key}=${JSON.stringify(value)}`);
+      return parts.length ? `<p class="props">${esc(parts.join("  "))}</p>` : "";
+    }
+
+    function renderNode(node, treeName) {
+      if (!node) return "";
+      nodeIndex.set(treeName + ":" + node.id, node);
+      const mark = node.mark || "";
+      if (node.kind === "text") {
+        return `<article class="leaf ${mark}" data-tree="${treeName}" data-node="${esc(node.id)}" tabindex="0"><span class="kind">текст</span><strong>${esc(JSON.stringify(node.value))}</strong></article>`;
+      }
+      const kind = node.kind === "component" ? "компонент" : "тег";
+      const key = node.key == null ? "key: null" : `key="${node.key}"`;
+      let body = "";
+      if (node.instanceState) body += `<p class="istate">стан позиції, не поле елемента: ${esc(node.instanceState)}</p>`;
+      if (node.kind === "component" && node.notCalled) body += `<p class="wait">функцію ще не викликано</p>`;
+      if (node.pendingChildren) body += `<p class="wait">children ще розкриваються</p>`;
+      const kids = (node.children || []).map((child) => renderNode(child, treeName)).join("");
+      const caption = node.kind === "component" && kids ? `<p class="cap">результат виклику</p>` : "";
+      return `<article class="node ${node.kind} ${mark}" data-tree="${treeName}" data-node="${esc(node.id)}" tabindex="0"><header><span class="kind">${kind}</span><strong>${esc(node.type)}</strong><span class="key">${esc(key)}</span></header>${propsLine(node.props)}${body}${kids ? `<div class="kids">${caption}${kids}</div>` : ""}</article>`;
+    }
+
+    function formatElement(node) {
+      if (!node) return "Клацніть вузол на дереві.\nПублічна форма з документації: type, key, ref, props.";
+      if (node.kind === "text") {
+        return [
+          "// Не React-елемент.",
+          "// Це рядок у props.children батька.",
+          "// У документі йому відповідає текстовий вузол.",
+          JSON.stringify(node.value),
+        ].join("\n");
+      }
+      const typeLine = node.kind === "component"
+        ? `  type: ${node.type}, // функція, не рядок`
+        : `  type: "${node.type}", // ім'я тега`;
+      const lines = ["{" , typeLine, `  key: ${node.key == null ? "null" : JSON.stringify(String(node.key))},`, "  ref: null,"];
+      const propLines = Object.entries(node.props || {}).map(([key, value]) => `    ${key}: ${JSON.stringify(value)},`);
+      if (node.kind === "host") {
+        if (node.pendingChildren) propLines.push("    children: /* ще розкриваються */,");
+        else if (node.children?.length === 1 && node.children[0].kind === "text") propLines.push(`    children: ${JSON.stringify(node.children[0].value)},`);
+        else if (node.children?.length) propLines.push("    children: /* вкладені елементи на дереві */,");
+      }
+      lines.push(propLines.length ? `  props: {\n${propLines.join("\n")}\n  },` : "  props: {},");
+      lines.push("}");
+      return lines.join("\n");
+    }
+
+    function noteFor(node) {
+      if (!node) return "Спрощений вигляд із довідки createElement. У рантаймі є внутрішні поля; для diff важливі type, key і props.";
+      if (node.kind === "text") return "Текстовий рядок не має type, key і props.";
+      if (node.kind === "component") {
+        return node.notCalled
+          ? "Об'єкт із функцією в type не запускає функцію і не створює DOM. Це інструкція для наступного виклику."
+          : "Результат виклику показано на дереві під карткою. Він не лежить у props.children, якщо батько не передав дітей.";
+      }
+      let note = "Об'єкт описує DOM-вузол, але сам ним не є. Документ зміниться лише на commit.";
+      if (node.key != null) note += " key лежить на елементі, не в props, і в компонент як props.key не потрапляє.";
+      return note;
+    }
+
+    function renderInspector() {
+      const node = selected;
+      document.getElementById("inspect").textContent = formatElement(node);
+      const extra = node?.instanceState ? ` Стан цієї позиції: ${node.instanceState}.` : "";
+      document.getElementById("inspect-note").textContent = noteFor(node) + extra;
+      document.querySelectorAll("[data-node]").forEach((el) => {
+        el.classList.toggle("picked", !!node && el.dataset.tree === selectedTree && el.dataset.node === node.id);
+      });
+    }
+
+    function renderSource(scenario) {
+      const box = document.getElementById("src");
+      document.getElementById("code-file").textContent = scenario.sourceFile;
+      const marks = new Set(scenario.marks[stepIndex] || []);
+      box.innerHTML = scenario.source.map((line, index) => {
+        const n = index + 1;
+        return `<div class="ln${marks.has(n) ? " hl" : ""}"><span>${n}</span><code>${esc(line) || " "}</code></div>`;
+      }).join("");
+      const hit = box.querySelector(".hl");
+      if (hit) box.scrollTop = Math.max(0, hit.offsetTop - 32);
+    }
+
+    function render() {
+      const scenario = current();
+      const item = step();
+      document.querySelectorAll("#tabs button").forEach((button, index) => {
+        button.setAttribute("aria-selected", String(index === scenarioIndex));
+      });
+      phasesEl.querySelectorAll("button").forEach((button) => {
+        const active = button.dataset.phase === phaseGroup(item.phase);
+        if (active) button.setAttribute("aria-current", "step");
+        else button.removeAttribute("aria-current");
+        button.textContent = phaseLabel[button.dataset.phase] + (active && item.phase === "diff" ? " · diffing" : "");
+      });
+
+      document.getElementById("kicker").textContent = phaseLabel[phaseGroup(item.phase)] + (item.phase === "diff" ? " · diffing" : "");
+      document.getElementById("title").textContent = item.title;
+      document.getElementById("lead").textContent = item.lead;
+      const calls = document.getElementById("calls");
+      calls.hidden = !item.calls;
+      calls.textContent = item.calls ? "Виклик: " + item.calls.join(" → ") : "";
+      renderSource(scenario);
+      document.getElementById("badges").innerHTML = (item.badges || []).map((badge) =>
+        `<span class="badge ${badge.tone || ""}"><b>${esc(badge.label)}</b>${esc(badge.value)}</span>`
+      ).join("");
+      const doc = item.doc || DOC.render;
+      document.getElementById("doc").innerHTML = `Джерело: <a href="${doc[1]}" target="_blank" rel="noreferrer">${esc(doc[0])}</a>`;
+
+      nodeIndex = new Map();
+      const prev = cloneMarked(scenario.prev, item.prevMarks || {});
+      const next = item.next ? cloneMarked(item.next, item.nextMarks || {}) : null;
+      document.getElementById("prev-tree").innerHTML = renderNode(prev, "prev");
+      document.getElementById("next-tree").innerHTML = next
+        ? renderNode(next, "next")
+        : `<p class="empty-tree">Нового дерева ще немає. Trigger лише ставить render у чергу, документ лишається попереднім.</p>`;
+      document.getElementById("next-caption").textContent = item.phase === "diff"
+        ? "Порівняння з лівим деревом. Операції вже пораховані, у документ іще не записані."
+        : "З'являється під час render. Документ поки не чіпається.";
+      document.getElementById("panel-prev").classList.toggle("hot", item.spotlight === "trees" || item.spotlight === "prev");
+      document.getElementById("panel-next").classList.toggle("hot", item.spotlight === "trees" || item.spotlight === "next");
+      document.getElementById("panel-dom").classList.toggle("hot", item.spotlight === "dom");
+
+      for (const record of pool.values()) delete record.el.dataset.mark;
+      sync(liveEl, (item.live || scenario.initialLive)());
+      applyMarks(item.domMarks);
+      domTreeEl.innerHTML = [...liveEl.children].map((el) => describe(el, item.domMarks)).join("");
+      document.getElementById("dom-status").textContent = item.domStatus || "Документ іще не змінювався. Це вузли, які вже є на сторінці.";
+
+      const ops = item.ops || [];
+      document.getElementById("ops").className = "ops" + (item.opsState === "applied" ? " applied" : "");
+      document.getElementById("ops").innerHTML = ops.map((op) => `<li class="${op.kind}">${esc(op.text)}</li>`).join("")
+        || "<li class='skip'>Ще немає. Список з'явиться під час порівняння дерев.</li>";
+      document.getElementById("ops-state").textContent = item.opsState === "applied"
+        ? "Ці операції вже застосовані до вузлів праворуч."
+        : item.opsState === "planned"
+          ? "Це план. Реальний DOM зміниться на commit."
+          : "Render іще не порівняв дерева.";
+
+      document.getElementById("count").textContent = `${stepIndex + 1} / ${scenario.steps.length}`;
+      document.getElementById("prev-btn").disabled = stepIndex === 0;
+      document.getElementById("next-btn").disabled = stepIndex === scenario.steps.length - 1;
+
+      if (item.focus && nodeIndex.has(item.focus.tree + ":" + item.focus.id)) {
+        selectedTree = item.focus.tree;
+        selected = nodeIndex.get(item.focus.tree + ":" + item.focus.id);
+      } else {
+        selected = null;
+        selectedTree = "";
+      }
+      renderInspector();
+    }
+
+    function go(delta) {
+      const next = stepIndex + delta;
+      if (next < 0 || next >= current().steps.length) return;
+      stepIndex = next;
+      render();
+    }
+
+    function enterScenario(index, keepStep) {
+      scenarioIndex = index;
+      if (!keepStep) stepIndex = 0;
+      resetPool();
+      stopPlay();
+      render();
+    }
+
+    function stopPlay() {
+      clearInterval(timer);
+      timer = 0;
+      document.getElementById("play-btn").textContent = "Відтворити";
+    }
+
+    scenarios.forEach((scenario, index) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.setAttribute("role", "tab");
+      button.innerHTML = `${scenario.title}<small>${scenario.hint}</small>`;
+      button.addEventListener("click", () => enterScenario(index));
+      tabsEl.appendChild(button);
+    });
+    phaseOrder.forEach((phase) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.dataset.phase = phase;
+      button.textContent = phaseLabel[phase];
+      button.addEventListener("click", () => {
+        const index = current().steps.findIndex((item) => phaseGroup(item.phase) === phase);
+        if (index >= 0) {
+          stepIndex = index;
+          render();
+        }
+      });
+      phasesEl.appendChild(button);
+    });
+
+    document.getElementById("next-btn").addEventListener("click", () => go(1));
+    document.getElementById("prev-btn").addEventListener("click", () => go(-1));
+    document.getElementById("reset-btn").addEventListener("click", () => enterScenario(scenarioIndex));
+    document.getElementById("play-btn").addEventListener("click", () => {
+      if (timer) {
+        stopPlay();
+        return;
+      }
+      document.getElementById("play-btn").textContent = "Пауза";
+      timer = setInterval(() => {
+        if (stepIndex >= current().steps.length - 1) {
+          stopPlay();
+          return;
+        }
+        go(1);
+      }, 1600);
+    });
+    document.getElementById("trees").addEventListener("click", (event) => {
+      const card = event.target.closest("[data-node]");
+      if (!card) return;
+      selectedTree = card.dataset.tree;
+      selected = nodeIndex.get(selectedTree + ":" + card.dataset.node) || null;
+      renderInspector();
+    });
+    document.getElementById("trees").addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      const card = event.target.closest("[data-node]");
+      if (!card) return;
+      event.preventDefault();
+      card.click();
+    });
+    liveEl.addEventListener("input", () => {
+      domTreeEl.innerHTML = [...liveEl.children].map((el) => describe(el, step().domMarks)).join("");
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.target.matches("input, textarea")) return;
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        go(1);
+      } else if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        go(-1);
+      }
+    });
+
+    enterScenario(0);
+  </script>
+</body>
+</html>

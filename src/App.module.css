@@ -1,0 +1,26 @@
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: 22px;
+  align-items: start;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  width: min(100%, 680px);
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+  padding: 14px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: #f8fafc;
+}
+
+@media (max-width: 520px) {
+  .toolbar > button {
+    width: 100%;
+  }
+}

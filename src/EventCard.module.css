@@ -54,3 +54,10 @@
 .actions {
   margin-top: 12px;
 }
+
+.description {
+  margin: 8px 0 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #4b5563;
+}
