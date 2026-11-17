@@ -5,43 +5,30 @@ import Button from './Button';
 import css from './App.module.css';
 import type { Event } from './types';
 import type { DraftEvent } from './AddEventForm';
-
-const initialEvents: Event[] = [
-  {
-    id: 'id-1',
-    title: 'React Meetup Lviv',
-    date: '01.08.2026',
-    location: 'Львів, Дорошенка 55',
-    isOnline: false,
-    description:
-      'Щомісячна зустріч React-спільноти Львова: доповіді, нетворкінг і піца. Цього разу говоримо про Server Components.',
-    going: false,
-  },
-  {
-    id: 'id-2',
-    title: 'TypeScript Workshop',
-    date: '15.08.2026',
-    location: 'Online',
-    isOnline: true,
-    description:
-      'Практичний воркшоп із просунутих типів TypeScript для React-розробників. Дженерики, utility types, type guards.',
-    going: false,
-  },
-  {
-    id: 'id-3',
-    title: 'Frontend Conf Kyiv',
-    date: '20.09.2026',
-    location: 'Київ, НСК Олімпійський',
-    isOnline: false,
-    description:
-      'Найбільша фронтенд-конференція року: три сцени, воркшопи та афтепаті для учасників.',
-    going: false,
-  },
-];
+import EventSearchForm from './EventSearchForm';
+import { fetchEvents } from './services/eventService';
 
 export default function App() {
-  const [events, setEvents] = useState<Event[]>(initialEvents);
+  const [events, setEvents] = useState<Event[]>([]);
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isError, setIsError] = useState(false);
+
+  const handleSearch = async (topic: string) => {
+    try {
+      setIsLoading(true);
+      // Скидаємо помилку перед КОЖНИМ запитом, а не лише в catch
+      setIsError(false);
+
+      const data = await fetchEvents(topic);
+      setEvents(data);
+    } catch {
+      setIsError(true);
+    } finally {
+      // finally виконається за будь-якого результату
+      setIsLoading(false);
+    }
+  };
 
   const handleToggleGoing = (id: string) => {
     setEvents(events.map((event) => (event.id === id ? { ...event, going: !event.going } : event)));
@@ -64,6 +51,12 @@ export default function App() {
   return (
     <>
       <h1>Найближчі події</h1>
+
+      <EventSearchForm onSearch={handleSearch} />
+
+      {isLoading && <p>Завантажуємо події, зачекайте…</p>}
+      {isError && <p>Ой, щось пішло не так! Спробуйте ще раз.</p>}
+
       <div className={css.toolbar}>
         <p>
           Йдете на {goingCount} з {events.length} подій
