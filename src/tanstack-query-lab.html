@@ -1,0 +1,1544 @@
+<!DOCTYPE html>
+<html lang="uk">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Заняття 5 — чим допомагає TanStack Query</title>
+    <style>
+      :root {
+        --bg: #efe6d6;
+        --paper: #fffaf2;
+        --ink: #241c16;
+        --muted: #6d5f54;
+        --line: #e3d3c0;
+        --manual: #9f3d22;
+        --manual-bg: #fff1e8;
+        --query: #0c6b60;
+        --query-bg: #e5f5f1;
+        --server: #243044;
+        --server-bg: #f3f6fb;
+        --fetch: #1e4d8c;
+        --stale: #8a5a12;
+        --bad: #9f1239;
+        --shadow: 0 14px 36px rgba(55, 32, 14, 0.08);
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        color: var(--ink);
+        background: var(--bg);
+        font: 16px/1.5 "Segoe UI", sans-serif;
+      }
+
+      body::before {
+        content: "";
+        display: block;
+        height: 8px;
+        background: linear-gradient(90deg, var(--manual) 0 50%, var(--query) 50% 100%);
+      }
+
+      .wrap { max-width: 1120px; margin: 0 auto; padding: 28px 20px 64px; }
+
+      h1, h2, h3, .serif { font-family: Georgia, "Iowan Old Style", Palatino, serif; font-weight: 600; }
+
+      h1 { font-size: clamp(32px, 5vw, 48px); line-height: 1.05; margin: 8px 0 12px; letter-spacing: -0.03em; }
+      h2 { font-size: 20px; margin: 0 0 8px; }
+      h3 { font-size: 16px; margin: 0; }
+
+      p { margin: 0 0 10px; }
+
+      .kicker {
+        margin: 0;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .lede { max-width: 68ch; color: var(--ink); }
+
+      .swap { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 18px 0 0; }
+      .swap s, .swap strong {
+        display: inline-block;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: var(--paper);
+        border: 1px solid var(--line);
+      }
+      .swap s { color: var(--manual); }
+      .swap strong { background: var(--query); color: white; border-color: var(--query); text-decoration: none; }
+
+      .tabs {
+        position: sticky;
+        top: 0;
+        z-index: 4;
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        padding: 12px 0;
+        margin: 8px 0 16px;
+        background: color-mix(in srgb, var(--bg) 88%, transparent);
+        backdrop-filter: blur(8px);
+      }
+
+      button, .tab {
+        font: inherit;
+        color: inherit;
+        cursor: pointer;
+      }
+
+      button:focus-visible, .tab:focus-visible {
+        outline: 2px solid var(--fetch);
+        outline-offset: 2px;
+      }
+
+      button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+      .tab, .chip, .btn {
+        border: 1px solid var(--line);
+        background: var(--paper);
+        border-radius: 999px;
+        padding: 8px 14px;
+      }
+
+      .tab[aria-selected="true"], .chip[aria-pressed="true"], #pager button[aria-pressed="true"] {
+        background: var(--ink);
+        color: var(--paper);
+        border-color: var(--ink);
+      }
+
+      .chip.warn[aria-pressed="true"] { background: var(--manual); border-color: var(--manual); color: white; }
+      .chip.good[aria-pressed="true"] { background: var(--query); border-color: var(--query); color: white; }
+
+      .btn.primary { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+      .btn.ghost { background: var(--paper); }
+
+      .lab[hidden] { display: none; }
+
+      .aha {
+        background: var(--paper);
+        border-left: 4px solid var(--query);
+        box-shadow: var(--shadow);
+        padding: 14px 16px;
+        border-radius: 12px;
+        margin-bottom: 14px;
+        min-height: 3.2em;
+      }
+
+      .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px; }
+      .check { display: flex; gap: 8px; align-items: center; font-size: 14px; }
+
+      .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+      .cols.three { grid-template-columns: 0.85fr 1fr 1fr; }
+
+      .col {
+        background: var(--paper);
+        border-radius: 16px;
+        padding: 14px;
+        box-shadow: var(--shadow);
+        min-width: 0;
+      }
+      .col.manual { background: var(--manual-bg); }
+      .col.query { background: var(--query-bg); }
+      .col.server { background: var(--server-bg); }
+
+      .tag {
+        display: inline-block;
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin-bottom: 4px;
+      }
+
+      .meta { color: var(--muted); font-size: 13px; min-height: 2.6em; }
+
+      .flags { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+      .flags span {
+        font-family: Consolas, "Cascadia Mono", monospace;
+        font-size: 12px;
+        background: rgba(255, 255, 255, 0.7);
+        border-radius: 999px;
+        padding: 3px 8px;
+      }
+      .flags span.yes b { color: var(--query); }
+      .flags span.bad.yes b { color: var(--bad); }
+      .flags span.fetch.yes b { color: var(--fetch); }
+
+      .list { display: grid; gap: 8px; min-height: 168px; align-content: start; }
+      .ticket {
+        background: var(--paper);
+        border: 1px solid var(--line);
+        border-left: 4px solid var(--server);
+        border-radius: 10px;
+        padding: 8px 10px;
+      }
+      .col.manual .ticket { border-left-color: var(--manual); }
+      .col.query .ticket { border-left-color: var(--query); }
+      .ticket.dim { opacity: 0.55; }
+      .ticket.just { border-left-color: var(--stale); background: #fff8e8; }
+      .ticket p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+
+      .empty, .ghost {
+        margin: 0;
+        color: var(--muted);
+        border: 1px dashed var(--line);
+        border-radius: 10px;
+        padding: 16px;
+        background: rgba(255, 255, 255, 0.35);
+      }
+
+      .skeleton {
+        height: 52px;
+        border-radius: 10px;
+        background: linear-gradient(90deg, #eadfcf, #fffaf2, #eadfcf);
+        background-size: 200% 100%;
+        animation: shimmer 1s linear infinite;
+      }
+
+      .blink { animation: blink 0.45s ease; }
+
+      @keyframes shimmer { to { background-position: -200% 0; } }
+      @keyframes blink { 40% { opacity: 0.2; } }
+
+      .badge {
+        display: inline-block;
+        border-radius: 999px;
+        padding: 2px 8px;
+        font-size: 12px;
+        background: white;
+        border: 1px solid var(--line);
+      }
+      .badge.fresh, .qrow.fresh .badge, .qrow.success .badge { color: var(--query); }
+      .badge.stale, .qrow.stale .badge { color: var(--stale); }
+      .badge.fetching, .qrow.fetching .badge { color: var(--fetch); }
+
+      .split { display: grid; grid-template-columns: 1.4fr 0.8fr; gap: 14px; }
+      .cache, .codebox, .table-wrap, .net-wrap {
+        background: var(--paper);
+        border-radius: 16px;
+        padding: 14px;
+        box-shadow: var(--shadow);
+      }
+
+      .codebox, .qrow code, .flags span, .net .what, .net .code {
+        font-family: Consolas, "Cascadia Mono", monospace;
+      }
+
+      .codebox {
+        white-space: pre-wrap;
+        font-size: 13px;
+        line-height: 1.45;
+        background: #241c16;
+        color: #f6efe4;
+        margin-bottom: 14px;
+      }
+
+      .qrow {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        align-items: center;
+        padding: 8px 0;
+        border-bottom: 1px solid var(--line);
+        font-size: 13px;
+      }
+      .qrow code { font-size: 12px; }
+
+      table { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 14px; }
+      th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+      th { font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+
+      .meters { display: grid; gap: 8px; margin: 8px 0 12px; }
+      .meter { height: 10px; background: white; border-radius: 999px; overflow: hidden; border: 1px solid var(--line); }
+      .meter i { display: block; height: 100%; }
+      .meter.long i { width: 100%; background: var(--manual); }
+      .meter.short i { width: 22%; background: var(--query); }
+      .meters div { display: grid; grid-template-columns: 72px 1fr auto; gap: 8px; align-items: center; font-size: 13px; }
+
+      .counts { display: flex; gap: 16px; font-size: 14px; margin-bottom: 8px; }
+      .counts b { font-family: Georgia, serif; font-size: 28px; line-height: 1; display: block; }
+
+      .modal {
+        margin-top: 8px;
+        background: white;
+        border-radius: 12px;
+        padding: 12px;
+        border: 1px solid var(--line);
+      }
+
+      .net-wrap { margin-top: 16px; }
+      .net-head { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+      .net { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+      .net li {
+        display: grid;
+        grid-template-columns: 72px 1fr 120px 64px;
+        gap: 8px;
+        align-items: center;
+        font-size: 13px;
+      }
+      .who { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
+      .net .manual .who { color: var(--manual); }
+      .net .query .who { color: var(--query); }
+      .track { height: 8px; background: #efe6d6; border-radius: 999px; overflow: hidden; }
+      .track i { display: block; height: 100%; width: 0; background: var(--fetch); transition: width 0.8s linear; }
+      .net li.go .track i { width: 100%; }
+      .net li.ok .track i { background: var(--query); }
+      .net li.bad .track i { background: var(--bad); width: 100%; }
+      .net li.hit .track i { background: var(--stale); width: 100%; }
+      .code { text-align: right; font-size: 12px; }
+
+      .section-title { margin: 22px 0 8px; }
+      .note { color: var(--muted); font-size: 14px; }
+
+      .flow-board {
+        display: grid;
+        grid-template-columns: minmax(0, 1.15fr) 56px minmax(0, 1fr) 56px minmax(0, 1fr) 56px minmax(0, 0.9fr);
+        gap: 8px;
+        align-items: stretch;
+        margin-bottom: 12px;
+      }
+      .station {
+        background: var(--paper);
+        border-radius: 16px;
+        padding: 12px;
+        box-shadow: var(--shadow);
+        min-width: 0;
+        border: 2px solid transparent;
+      }
+      .station.on { border-color: var(--query); }
+      .station.off { opacity: 0.45; }
+      .station.server { background: var(--server-bg); }
+      .station.cache { background: var(--query-bg); }
+      .station h3 { margin-bottom: 4px; }
+      .obs-row { display: grid; gap: 6px; }
+      .obs {
+        border: 1px dashed var(--line);
+        border-radius: 10px;
+        padding: 6px 8px;
+        background: rgba(255, 255, 255, 0.55);
+        font-size: 13px;
+      }
+      .obs strong { display: block; }
+      .obs em { color: var(--muted); font-style: normal; }
+      .obs.has { border-style: solid; border-color: var(--query); background: white; }
+      .obs.has em { color: var(--ink); }
+      .slot { display: flex; justify-content: space-between; gap: 6px; font-size: 12px; padding: 4px 0; border-top: 1px solid var(--line); }
+      .slot code { font-family: Consolas, "Cascadia Mono", monospace; font-size: 11px; }
+      .pipe { position: relative; min-height: 18px; align-self: center; }
+      .pipe i {
+        position: absolute;
+        left: 0; right: 0; top: 50%;
+        height: 4px;
+        margin-top: -2px;
+        background: #e3d3c0;
+        border-radius: 99px;
+      }
+      .pipe.fwd i::after, .pipe.back i::after {
+        content: "";
+        position: absolute;
+        top: -4px;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: var(--fetch);
+        animation: bead 0.75s linear;
+      }
+      .pipe.back i::after { background: var(--query); animation-name: bead-back; }
+      @keyframes bead { from { left: 0; } to { left: calc(100% - 12px); } }
+      @keyframes bead-back { from { left: calc(100% - 12px); } to { left: 0; } }
+      .local-lane, .flow-now, .flow-log {
+        background: var(--paper);
+        border-radius: 16px;
+        padding: 12px 14px;
+        box-shadow: var(--shadow);
+      }
+      .local-lane { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+      .pill {
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        padding: 4px 10px;
+        font-family: Consolas, "Cascadia Mono", monospace;
+        font-size: 13px;
+        background: white;
+      }
+      .pill.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+      .pill.stay { color: var(--muted); }
+      .flow-now { margin-bottom: 12px; font-family: Georgia, Palatino, serif; }
+      .flow-log { list-style: none; margin: 0; padding: 12px 14px; display: grid; gap: 6px; }
+      .flow-log li { font-size: 14px; }
+      .flow-log li.done { color: var(--ink); }
+      .flow-log li.wait { color: var(--muted); }
+      .legend-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; }
+      .legend-dot.req { background: var(--fetch); }
+      .legend-dot.data { background: var(--query); }
+
+      @media (max-width: 860px) {
+        .cols, .cols.three, .split, .flow-board { grid-template-columns: 1fr; }
+        .net li { grid-template-columns: 64px 1fr 52px; }
+        .track { display: none; }
+        .pipe { height: 28px; }
+        .pipe i { left: 50%; right: auto; top: 0; width: 4px; height: 100%; margin: 0 0 0 -2px; }
+        .pipe.fwd i::after, .pipe.back i::after { left: -4px; top: auto; animation: bead-y 0.75s linear; }
+        .pipe.back i::after { animation-name: bead-y-back; }
+      }
+      @keyframes bead-y { from { top: 0; } to { top: calc(100% - 12px); } }
+      @keyframes bead-y-back { from { top: calc(100% - 12px); } to { top: 0; } }
+
+      @media (prefers-reduced-motion: reduce) {
+        .skeleton, .blink, .track i, .pipe.fwd i::after, .pipe.back i::after { animation: none; transition: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <p class="kicker">Заняття 5 · Event Planner · симулятор</p>
+      <h1>Чим допомагає TanStack Query</h1>
+      <p class="lede">
+        Серверні дані належать бекенду: вони старіють, потрібні кільком компонентам і не мають зникати з екрана на кожен запит.
+        Нижче несправжня мережа з нарочною паузою. Зліва — те, що в занятті 4 робить <span class="serif">useEffect</span>.
+        Справа — те, що бере на себе Query. Вкладка «Потік» показує шлях даних: компонент, ключ, кеш, axios, бекенд.
+      </p>
+      <p class="swap" aria-hidden="true"><s>useState</s><s>useEffect</s><s>try / catch</s><strong>useQuery</strong></p>
+
+      <nav class="tabs" aria-label="Теми симулятора">
+        <button class="tab" data-tab="flow" aria-selected="true">Потік</button>
+        <button class="tab" data-tab="fresh">Свіжість</button>
+        <button class="tab" data-tab="routine">Рутина</button>
+        <button class="tab" data-tab="keys">Ключ</button>
+        <button class="tab" data-tab="pages">Сторінки</button>
+        <button class="tab" data-tab="share">Один кеш</button>
+      </nav>
+
+      <section class="lab" data-lab="flow">
+        <p class="aha" id="flow-aha">Серверні дані їдуть у кеш QueryClient. Компонент лише підписується на ключ і малює те, що кеш йому віддає.</p>
+        <div class="controls">
+          <button class="chip good" type="button" data-flow="first" aria-pressed="true">Перший запит</button>
+          <button class="chip" type="button" data-flow="hit" aria-pressed="false">Той самий ключ</button>
+          <button class="chip" type="button" data-flow="newkey" aria-pressed="false">Новий topic</button>
+          <button class="chip warn" type="button" data-flow="manual" aria-pressed="false">Руками, без кешу</button>
+          <button class="btn primary" id="flow-play" type="button">Пустити потік</button>
+          <button class="btn" id="flow-step" type="button">Крок</button>
+          <span class="note"><span class="legend-dot req"></span>запит <span class="legend-dot data"></span>дані назад</span>
+        </div>
+        <div class="local-lane">
+          <span>Лишається в компоненті</span>
+          <span class="pill" id="flow-topic">topic</span>
+          <span class="pill stay">isFormOpen</span>
+          <span class="pill stay">goingIds</span>
+          <span class="note" id="flow-http">HTTP: 0</span>
+        </div>
+        <div class="flow-board" id="flow-board">
+          <article class="station" data-node="ui">
+            <p class="tag">підписники</p>
+            <h3>Компоненти</h3>
+            <div class="obs-row">
+              <div class="obs" id="obs-app"><strong>App</strong><em>немає data</em></div>
+              <div class="obs" id="obs-side"><strong>Sidebar</strong><em>немає data</em></div>
+            </div>
+          </article>
+          <div class="pipe" data-pipe="to-cache" aria-hidden="true"><i></i></div>
+          <article class="station cache" data-node="cache">
+            <p class="tag">QueryClient</p>
+            <h3 id="flow-cache-title">Кеш</h3>
+            <p class="meta" id="flow-key">ключ зʼявиться на першому кроці</p>
+            <div id="flow-slots"></div>
+          </article>
+          <div class="pipe" data-pipe="to-fn" aria-hidden="true"><i></i></div>
+          <article class="station" data-node="fn">
+            <p class="tag" id="flow-fn-tag">ваш код</p>
+            <h3 id="flow-fn-title">queryFn</h3>
+            <p class="meta" id="flow-fn-note">fetchEvents лишається axios-функцією</p>
+          </article>
+          <div class="pipe" data-pipe="to-server" aria-hidden="true"><i></i></div>
+          <article class="station server" data-node="server">
+            <p class="tag">mockapi</p>
+            <h3>Бекенд</h3>
+            <p class="meta" id="flow-server-note">джерело правди, не копія в useState</p>
+          </article>
+        </div>
+        <p class="flow-now" id="flow-now">Оберіть сценарій і пустіть потік.</p>
+        <ol class="flow-log" id="flow-log"></ol>
+      </section>
+
+      <section class="lab" data-lab="fresh" hidden>
+        <p class="aha" id="fresh-aha">Список подій належить серверу. useState тримає лише копію на екрані.</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th></th><th>Локальний стан</th><th>Серверний стан</th></tr>
+            </thead>
+            <tbody>
+              <tr><th>У Event Planner</th><td>isFormOpen, topic, goingIds</td><td>список подій</td></tr>
+              <tr><th>Хто володіє</th><td>компонент</td><td>бекенд</td></tr>
+              <tr><th>Чи старіє</th><td>ні</td><td>так</td></tr>
+              <tr><th>Інструмент</th><td>useState</td><td>useQuery</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="controls">
+          <button class="btn primary" id="fresh-next" type="button">1. Завантажити список</button>
+          <button class="btn" id="fresh-retry" type="button">Повторити useEffect</button>
+          <button class="btn ghost" id="fresh-reset" type="button">Спочатку</button>
+        </div>
+        <div class="cols three">
+          <article class="col server">
+            <p class="tag">Бекенд</p>
+            <h2>Джерело правди</h2>
+            <p class="meta" id="server-meta">Події живуть тут, навіть коли жоден компонент їх не бачить.</p>
+            <div class="list" id="server-list"></div>
+          </article>
+          <article class="col manual">
+            <p class="tag">Заняття 4</p>
+            <h2>Копія в useState</h2>
+            <p class="meta" id="manual-meta">Немає статусу fresh / stale. Оновлення — лише новий ефект.</p>
+            <div class="list" id="manual-list"></div>
+          </article>
+          <article class="col query">
+            <p class="tag">TanStack Query</p>
+            <h2>Кеш <span class="badge" id="query-badge">idle</span></h2>
+            <p class="meta" id="query-meta">Кеш памʼятає дані і знає, коли вони застаріли.</p>
+            <div class="flags">
+              <span id="fq-loading">isLoading <b>false</b></span>
+              <span id="fq-fetching" class="fetch">isFetching <b>false</b></span>
+            </div>
+            <div class="list" id="query-list"></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="lab" data-lab="routine" hidden>
+        <p class="aha" id="routine-aha">Один і той самий GET. Зліва три стани й ефект, справа один useQuery.</p>
+        <div class="controls">
+          <button class="btn primary" id="routine-go" type="button">Завантажити події</button>
+          <label class="check"><input id="routine-unstable" type="checkbox" /> Нестабільна мережа</label>
+        </div>
+        <div class="cols">
+          <article class="col manual">
+            <p class="tag">useState + useEffect + try/catch</p>
+            <h2>Руками</h2>
+            <div class="meters" aria-hidden="true">
+              <div><span>код</span><div class="meter long"><i></i></div><em>~20 рядків</em></div>
+            </div>
+            <div class="flags">
+              <span id="m-loading" class="fetch">isLoading <b>false</b></span>
+              <span id="m-error" class="bad">isError <b>false</b></span>
+            </div>
+            <p class="meta" id="manual-stats">Запитів: 0 · блимань списку: 0</p>
+            <div class="list" id="routine-manual"></div>
+          </article>
+          <article class="col query">
+            <p class="tag">useQuery</p>
+            <h2>Query</h2>
+            <div class="meters" aria-hidden="true">
+              <div><span>код</span><div class="meter short"><i></i></div><em>4 рядки</em></div>
+            </div>
+            <div class="flags">
+              <span id="r-loading" class="fetch">isLoading <b>false</b></span>
+              <span id="r-fetching" class="fetch">isFetching <b>false</b></span>
+              <span id="r-error" class="bad">isError <b>false</b></span>
+              <span id="r-success">isSuccess <b>false</b></span>
+            </div>
+            <p class="meta" id="query-stats">Запитів: 0 · дані лишаються на екрані під час фонового запиту</p>
+            <div class="list" id="routine-query"></div>
+          </article>
+        </div>
+        <p class="note">У демо Query робить один повтор. У бібліотеці за замовчуванням їх три. Мережевий шар той самий: <span class="serif">fetchEvents</span> ніхто не переписує.</p>
+      </section>
+
+      <section class="lab" data-lab="keys" hidden>
+        <p class="aha" id="keys-aha">Усе, від чого залежить відповідь сервера, має лежати в queryKey. Query не зазирає всередину queryFn.</p>
+        <div class="codebox" id="keys-code">useQuery({
+  queryKey: ['events'],
+  queryFn: () => fetchEvents('react'),
+})</div>
+        <div class="controls">
+          <button class="chip warn" type="button" data-mode="broken" aria-pressed="true">Ключ без topic</button>
+          <button class="chip good" type="button" data-mode="right" aria-pressed="false">Ключ з topic</button>
+          <button class="chip" type="button" data-topic="all" aria-pressed="false">усі</button>
+          <button class="chip" type="button" data-topic="react" aria-pressed="true">react</button>
+          <button class="chip" type="button" data-topic="node" aria-pressed="false">node</button>
+          <button class="chip" type="button" data-topic="css" aria-pressed="false">css</button>
+          <button class="btn primary" id="keys-go" type="button">Знайти</button>
+        </div>
+        <div class="split">
+          <article class="col query">
+            <p class="tag">Екран</p>
+            <h2>Список</h2>
+            <div class="flags">
+              <span id="k-loading" class="fetch">isLoading <b>false</b></span>
+              <span id="k-fetching" class="fetch">isFetching <b>false</b></span>
+              <span id="k-success">isSuccess <b>false</b></span>
+            </div>
+            <div class="list" id="keys-list"></div>
+          </article>
+          <aside class="cache">
+            <h2>DevTools · кеш</h2>
+            <div id="keys-cache"></div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="lab" data-lab="pages" hidden>
+        <p class="aha" id="pages-aha">Номер сторінки — частина ключа. keepPreviousData лишає попередній список, поки їде новий.</p>
+        <div class="controls" id="pager">
+          <button class="btn" type="button" data-page="1">Сторінка 1</button>
+          <button class="btn" type="button" data-page="2">Сторінка 2</button>
+          <button class="btn" type="button" data-page="3">Сторінка 3</button>
+        </div>
+        <p class="note">Обидві колонки — це useQuery з одним кешем. Відрізняється лише placeholderData.</p>
+        <div class="cols">
+          <article class="col manual">
+            <p class="tag">без placeholderData</p>
+            <h2>Список зникає</h2>
+            <div class="flags">
+              <span id="p-loading" class="fetch">isLoading <b>false</b></span>
+              <span id="p-fetching" class="fetch">isFetching <b>false</b></span>
+            </div>
+            <div class="list" id="plain-list"></div>
+          </article>
+          <article class="col query">
+            <p class="tag">placeholderData: keepPreviousData</p>
+            <h2>Список лишається</h2>
+            <div class="flags">
+              <span id="kpp-loading" class="fetch">isLoading <b>false</b></span>
+              <span id="kpp-fetching" class="fetch">isFetching <b>false</b></span>
+            </div>
+            <p class="meta" id="keep-note">Оберіть сторінку.</p>
+            <div class="list" id="keep-list"></div>
+          </article>
+        </div>
+        <aside class="cache" style="margin-top: 14px">
+          <h2>DevTools · окремий запис на кожну сторінку</h2>
+          <div id="pages-cache"></div>
+        </aside>
+      </section>
+
+      <section class="lab" data-lab="share" hidden>
+        <p class="aha" id="share-aha">Однаковий queryKey у двох компонентах — один політ у мережу. Кеш живе в QueryClient, не в компоненті.</p>
+        <div class="controls">
+          <button class="btn primary" id="share-mount" type="button">Змонтувати App і Sidebar</button>
+          <button class="btn" id="share-unmount" type="button">Розмонтувати</button>
+        </div>
+        <div class="counts">
+          <div>Запитів руками<b id="share-m-count">0</b></div>
+          <div>Запитів Query<b id="share-q-count">0</b></div>
+        </div>
+        <div class="cols">
+          <article class="col manual">
+            <p class="tag">два useEffect</p>
+            <h2>Кожен компонент просить сам</h2>
+            <div class="list" id="share-manual"></div>
+          </article>
+          <article class="col query">
+            <p class="tag">один ключ ['events']</p>
+            <h2>Обидва читають кеш</h2>
+            <div class="list" id="share-query"></div>
+          </article>
+        </div>
+        <aside class="cache" style="margin-top: 14px">
+          <h2>DevTools</h2>
+          <div id="share-cache"></div>
+        </aside>
+
+        <h2 class="section-title">Залежний запит · enabled</h2>
+        <p class="aha" id="city-aha">Хук уже в компоненті. Поки модалка «Піду» закрита, enabled: false і мережа мовчить.</p>
+        <div class="controls">
+          <span class="badge" id="enabled-flag">enabled: false</span>
+          <button class="btn" type="button" data-city="Київ">Піду · Київ</button>
+          <button class="btn" type="button" data-city="Львів">Піду · Львів</button>
+          <button class="btn ghost" id="city-close" type="button">Закрити модалку</button>
+        </div>
+        <div class="cols">
+          <article class="col query">
+            <p class="tag">Схожі події</p>
+            <h2 id="modal-title">Модалка закрита</h2>
+            <div class="list" id="similar-list"></div>
+          </article>
+          <aside class="cache">
+            <h2>Кеш за містом</h2>
+            <div id="city-cache"></div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="net-wrap" aria-label="Стрічка мережі">
+        <div class="net-head">
+          <h2>Мережа</h2>
+          <button class="btn ghost" id="net-clear" type="button">Очистити стрічку</button>
+        </div>
+        <ol class="net" id="net"></ol>
+      </section>
+    </div>
+
+    <script>
+      const DELAY = 800;
+      const BASE = [
+        { title: "React Meetup", place: "Київ", date: "12 грудня" },
+        { title: "Node Night", place: "Львів", date: "18 грудня" },
+        { title: "CSS Day", place: "Дніпро", date: "3 січня" },
+      ];
+      const EXTRA = { title: "GraphQL Workshop", place: "Одеса", date: "15 січня", just: true };
+      const CATALOG = {
+        all: [
+          ...BASE,
+          { title: "TypeScript Live", place: "Київ", date: "9 січня" },
+        ],
+        react: [
+          { title: "React Meetup", place: "Київ", date: "12 грудня" },
+          { title: "TypeScript Live", place: "Київ", date: "9 січня" },
+        ],
+        node: [{ title: "Node Night", place: "Львів", date: "18 грудня" }],
+        css: [{ title: "CSS Day", place: "Дніпро", date: "3 січня" }],
+      };
+      const PAGES = {
+        1: CATALOG.react,
+        2: CATALOG.node.concat(CATALOG.css),
+        3: [{ title: "Testing Party", place: "Львів", date: "21 січня" }, EXTRA],
+      };
+      const CITIES = {
+        Київ: CATALOG.react,
+        Львів: [
+          { title: "Node Night", place: "Львів", date: "18 грудня" },
+          { title: "Testing Party", place: "Львів", date: "21 січня" },
+        ],
+      };
+
+      const $ = (id) => document.getElementById(id);
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const clone = (list) => list.map((item) => ({ ...item }));
+
+      const busy = { fresh: false, routine: false, keys: false, pages: false, share: false, city: false };
+
+      function tickets(list, { dim = false, empty = "порожньо" } = {}) {
+        if (!list) return `<p class="empty">${empty}</p>`;
+        if (!list.length) return `<p class="empty">${empty}</p>`;
+        return list
+          .map(
+            (event) => `
+              <article class="ticket${dim ? " dim" : ""}${event.just ? " just" : ""}">
+                <h3>${event.title}</h3>
+                <p>${event.place} · ${event.date}</p>
+              </article>`,
+          )
+          .join("");
+      }
+
+      function skeletons() {
+        return '<div class="skeleton"></div><div class="skeleton"></div>';
+      }
+
+      function flag(id, value) {
+        const node = $(id);
+        node.querySelector("b").textContent = value ? "true" : "false";
+        node.classList.toggle("yes", Boolean(value));
+      }
+
+      function cacheRows(el, rows, emptyText) {
+        el.replaceChildren();
+        if (!rows.length) {
+          const p = document.createElement("p");
+          p.className = "empty";
+          p.textContent = emptyText;
+          el.append(p);
+          return;
+        }
+        rows.forEach((row) => {
+          const line = document.createElement("div");
+          line.className = `qrow ${row.status}`;
+          const code = document.createElement("code");
+          code.textContent = row.key;
+          const badge = document.createElement("span");
+          badge.className = "badge";
+          badge.textContent = row.status;
+          line.append(code, badge);
+          el.append(line);
+        });
+      }
+
+      function track(side, label) {
+        const li = document.createElement("li");
+        li.className = `net ${side} pending`;
+        const who = document.createElement("span");
+        who.className = "who";
+        who.textContent = side === "manual" ? "вручну" : "query";
+        const what = document.createElement("span");
+        what.className = "what";
+        what.textContent = label;
+        const barWrap = document.createElement("span");
+        barWrap.className = "track";
+        const bar = document.createElement("i");
+        barWrap.append(bar);
+        const code = document.createElement("span");
+        code.className = "code";
+        code.textContent = "…";
+        li.append(who, what, barWrap, code);
+        $("net").prepend(li);
+        while ($("net").children.length > 10) $("net").lastChild.remove();
+        requestAnimationFrame(() => li.classList.add("go"));
+        const finish = (kind, text) => {
+          li.classList.remove("pending");
+          li.classList.add(kind);
+          code.textContent = text;
+        };
+        return {
+          ok: (text = "200") => finish("ok", text),
+          bad: (text = "500") => finish("bad", text),
+          hit: (text = "кеш") => finish("hit", text),
+        };
+      }
+
+      $("net-clear").addEventListener("click", () => {
+        $("net").replaceChildren();
+      });
+
+      document.querySelectorAll(".tab").forEach((tab) => {
+        tab.addEventListener("click", () => showLab(tab.dataset.tab));
+      });
+
+      let pagesStarted = false;
+      function showLab(name) {
+        document.querySelectorAll(".tab").forEach((tab) => {
+          tab.setAttribute("aria-selected", tab.dataset.tab === name ? "true" : "false");
+        });
+        document.querySelectorAll(".lab").forEach((lab) => {
+          lab.hidden = lab.dataset.lab !== name;
+        });
+        if (name === "pages" && !pagesStarted) {
+          pagesStarted = true;
+          loadPage(1);
+        }
+      }
+
+      let serverEvents = clone(BASE);
+      let manualSnap = null;
+      let querySnap = null;
+      let manualLoading = false;
+      let freshStep = 0;
+      let queryPhase = "idle";
+
+      function renderFresh() {
+        $("server-list").innerHTML = tickets(serverEvents);
+        $("manual-list").innerHTML = manualLoading ? skeletons() : tickets(manualSnap, { empty: "ще немає копії" });
+        const fetching = queryPhase === "fetching";
+        $("query-list").innerHTML = fetching && !querySnap ? skeletons() : tickets(querySnap, { empty: "кеш порожній" });
+        $("query-badge").textContent = queryPhase;
+        $("query-badge").className = `badge ${queryPhase}`;
+        flag("fq-loading", fetching && !querySnap);
+        flag("fq-fetching", fetching);
+        const labels = ["1. Завантажити список", "2. Додати подію на сервері", "3. Зробити кеш stale", "4. Повернутися на вкладку", "Спочатку"];
+        $("fresh-next").textContent = labels[freshStep];
+        $("fresh-retry").disabled = busy.fresh || !manualSnap;
+        $("fresh-next").disabled = busy.fresh;
+      }
+
+      function resetFresh() {
+        serverEvents = clone(BASE);
+        manualSnap = null;
+        querySnap = null;
+        manualLoading = false;
+        freshStep = 0;
+        queryPhase = "idle";
+        $("fresh-aha").textContent = "Список подій належить серверу. useState тримає лише копію на екрані.";
+        $("server-meta").textContent = "Події живуть тут, навіть коли жоден компонент їх не бачить.";
+        $("manual-meta").textContent = "Немає статусу fresh / stale. Оновлення — лише новий ефект.";
+        $("query-meta").textContent = "Кеш памʼятає дані і знає, коли вони застаріли.";
+        renderFresh();
+      }
+
+      async function manualRefetch() {
+        if (busy.fresh || !manualSnap) return;
+        busy.fresh = true;
+        manualLoading = true;
+        manualSnap = null;
+        $("manual-list").classList.add("blink");
+        $("manual-meta").textContent = "Ефект пішов у мережу і на цей час очистив список.";
+        renderFresh();
+        const row = track("manual", "GET /events · useEffect");
+        await sleep(DELAY);
+        row.ok();
+        manualSnap = clone(serverEvents);
+        manualLoading = false;
+        $("manual-meta").textContent = "Копія наздогнала сервер. Ціна — порожній екран на час запиту.";
+        $("fresh-aha").textContent = "Ручний ефект уміє оновитись. Для цього він прибирає список і робить новий запит.";
+        $("manual-list").classList.remove("blink");
+        busy.fresh = false;
+        renderFresh();
+      }
+
+      async function freshNext() {
+        if (busy.fresh) return;
+        if (freshStep === 4) {
+          resetFresh();
+          return;
+        }
+        busy.fresh = true;
+        if (freshStep === 0) {
+          queryPhase = "fetching";
+          manualLoading = true;
+          manualSnap = null;
+          querySnap = null;
+          $("manual-list").classList.add("blink");
+          renderFresh();
+          const manualRow = track("manual", "GET /events");
+          const queryRow = track("query", "GET /events · ['events']");
+          await sleep(DELAY);
+          manualRow.ok();
+          queryRow.ok();
+          manualSnap = clone(serverEvents);
+          manualLoading = false;
+          querySnap = clone(serverEvents);
+          queryPhase = "fresh";
+          freshStep = 1;
+          $("fresh-aha").textContent = "Обидва екрани отримали копію. Далі зміниться лише сервер.";
+          $("query-meta").textContent = "status: success · дані fresh.";
+          $("manual-list").classList.remove("blink");
+        } else if (freshStep === 1) {
+          serverEvents = clone(BASE).concat(EXTRA);
+          freshStep = 2;
+          $("server-meta").textContent = "Хтось додав подію. Екрани про це ще не знають.";
+          $("fresh-aha").textContent = "Сервер змінився сам. useState не отримує про це звістку. Кеш теж лишається старим, доки його не освіжити.";
+        } else if (freshStep === 2) {
+          queryPhase = "stale";
+          freshStep = 3;
+          $("query-meta").textContent = "Дані на екрані є, але кеш позначено stale. Користувач нічого не втратив.";
+          $("fresh-aha").textContent = "stale не ховає список. Це позначка «копію пора оновити». У useState такої позначки немає.";
+        } else if (freshStep === 3) {
+          queryPhase = "fetching";
+          $("query-meta").textContent = "Фокус повернувся на вкладку. isLoading = false, isFetching = true, список на місці.";
+          renderFresh();
+          const row = track("query", "GET /events · refetchOnWindowFocus");
+          await sleep(DELAY);
+          row.ok();
+          querySnap = clone(serverEvents);
+          queryPhase = "fresh";
+          freshStep = 4;
+          $("query-meta").textContent = "Фонове оновлення дописало нову подію без блимання.";
+          $("manual-meta").textContent = "Копія в useState досі стара. Натисніть «Повторити useEffect», щоб порівняти ціну.";
+          $("fresh-aha").textContent = "Query освіжив дані у фоні. Лівий екран і далі показує вчорашню копію.";
+        }
+        busy.fresh = false;
+        renderFresh();
+      }
+
+      $("fresh-next").addEventListener("click", freshNext);
+      $("fresh-retry").addEventListener("click", manualRefetch);
+      $("fresh-reset").addEventListener("click", () => {
+        if (busy.fresh) return;
+        resetFresh();
+      });
+
+      const routineEvents = CATALOG.all.slice(0, 3);
+      const routine = {
+        manual: { events: null, isLoading: false, isError: false, requests: 0, blinks: 0 },
+        query: { events: null, isLoading: false, isFetching: false, isError: false, isSuccess: false, requests: 0 },
+      };
+
+      function renderRoutine() {
+        const manual = routine.manual;
+        const query = routine.query;
+        flag("m-loading", manual.isLoading);
+        flag("m-error", manual.isError);
+        flag("r-loading", query.isLoading);
+        flag("r-fetching", query.isFetching);
+        flag("r-error", query.isError);
+        flag("r-success", query.isSuccess);
+        $("manual-stats").textContent = `Запитів: ${manual.requests} · блимань списку: ${manual.blinks}`;
+        $("query-stats").textContent = `Запитів: ${query.requests} · ${query.events && query.isFetching ? "дані лишаються, запит іде у фоні" : "дані лишаються на екрані під час фонового запиту"}`;
+        $("routine-manual").innerHTML = manual.isLoading ? skeletons() : tickets(manual.events, { empty: manual.isError ? "помилка, список порожній" : "ще не запитували" });
+        $("routine-query").innerHTML = query.isLoading ? skeletons() : tickets(query.events, { empty: "ще не запитували" });
+      }
+
+      async function runRoutine() {
+        if (busy.routine) return;
+        busy.routine = true;
+        $("routine-go").disabled = true;
+        const unstable = $("routine-unstable").checked;
+        const manual = routine.manual;
+        const query = routine.query;
+        const hadQueryData = Boolean(query.events);
+        const hadManualData = Boolean(manual.events);
+
+        manual.events = null;
+        manual.isLoading = true;
+        manual.isError = false;
+        manual.requests += 1;
+        if (hadManualData) {
+          manual.blinks += 1;
+          $("routine-manual").classList.add("blink");
+        }
+
+        query.isFetching = true;
+        query.isLoading = !hadQueryData;
+        query.isError = false;
+        query.isSuccess = hadQueryData;
+        query.requests += 1;
+        renderRoutine();
+
+        const manualRow = track("manual", "GET /events");
+        const queryRow = track("query", "GET /events · спроба 1");
+        await sleep(DELAY);
+
+        if (!unstable) {
+          manualRow.ok();
+          queryRow.ok();
+          manual.events = routineEvents;
+          manual.isLoading = false;
+          query.events = routineEvents;
+          query.isLoading = false;
+          query.isFetching = false;
+          query.isSuccess = true;
+          $("routine-aha").textContent = hadQueryData
+            ? "Зліва список зник на час запиту. Справа isLoading = false, isFetching був true, картки не блимали."
+            : "Перше завантаження схоже в обох. Натисніть ще раз — або увімкніть нестабільну мережу.";
+        } else {
+          manualRow.bad();
+          queryRow.bad("спроба 1");
+          manual.isLoading = false;
+          manual.isError = true;
+          query.isError = !hadQueryData;
+          $("routine-aha").textContent = "Перша спроба впала. useEffect зупинився на isError. Query повторює запит сам.";
+          renderRoutine();
+          await sleep(400);
+          query.requests += 1;
+          const retry = track("query", "GET /events · retry");
+          await sleep(DELAY);
+          retry.ok();
+          query.events = routineEvents;
+          query.isLoading = false;
+          query.isFetching = false;
+          query.isError = false;
+          query.isSuccess = true;
+          $("routine-aha").textContent = hadQueryData
+            ? "Повтор пройшов у фоні, старі картки не зникали. Зліва помилка лишилась, доки ефект не запустять знову."
+            : "Повтор дотягнув дані. Зліва користувач досі бачить помилку.";
+        }
+
+        $("routine-manual").classList.remove("blink");
+        busy.routine = false;
+        $("routine-go").disabled = false;
+        renderRoutine();
+      }
+
+      $("routine-go").addEventListener("click", runRoutine);
+
+      let keyMode = "broken";
+      let keyTopic = "react";
+      const keyCache = new Map();
+      const keyView = { events: null, isLoading: false, isFetching: false, isSuccess: false };
+
+      function keyString() {
+        if (keyMode === "broken") return "['events']";
+        const topic = keyTopic === "all" ? "" : keyTopic;
+        return `['events', '${topic}']`;
+      }
+
+      function renderKeys() {
+        const topic = keyTopic === "all" ? "" : keyTopic;
+        $("keys-code").textContent = `useQuery({\n  queryKey: ${keyString()},\n  queryFn: () => fetchEvents('${topic}'),\n})`;
+        flag("k-loading", keyView.isLoading);
+        flag("k-fetching", keyView.isFetching);
+        flag("k-success", keyView.isSuccess);
+        $("keys-list").innerHTML = keyView.isLoading ? skeletons() : tickets(keyView.events, { empty: "натисніть «Знайти»" });
+        const rows = [...keyCache.entries()].map(([key, value]) => ({ key, status: value.status }));
+        if (keyView.isFetching && !keyCache.has(keyString())) {
+          rows.unshift({ key: keyString(), status: "fetching" });
+        }
+        cacheRows($("keys-cache"), rows, "кеш порожній");
+      }
+
+      document.querySelectorAll("[data-mode]").forEach((button) => {
+        button.addEventListener("click", () => {
+          keyMode = button.dataset.mode;
+          document.querySelectorAll("[data-mode]").forEach((item) => {
+            item.setAttribute("aria-pressed", item === button ? "true" : "false");
+          });
+          $("keys-aha").textContent = keyMode === "broken"
+            ? "topic змінюється в queryFn, ключ — ні. Натисніть «Знайти» двічі з різними темами."
+            : "Тепер тема в ключі. Інший topic — інший запис у кеші. Повтор той самий — миттєво з кешу.";
+          renderKeys();
+        });
+      });
+
+      document.querySelectorAll("[data-topic]").forEach((button) => {
+        button.addEventListener("click", () => {
+          keyTopic = button.dataset.topic;
+          document.querySelectorAll("[data-topic]").forEach((item) => {
+            item.setAttribute("aria-pressed", item === button ? "true" : "false");
+          });
+          renderKeys();
+        });
+      });
+
+      async function runSearch() {
+        if (busy.keys) return;
+        busy.keys = true;
+        $("keys-go").disabled = true;
+        const key = keyString();
+        const topic = keyTopic;
+        const cached = keyCache.get(key);
+
+        if (keyMode === "broken" && cached) {
+          const row = track("query", `${key} · topic «${topic}»`);
+          row.hit("кеш");
+          keyView.events = cached.events;
+          keyView.isLoading = false;
+          keyView.isFetching = false;
+          keyView.isSuccess = true;
+          cached.status = "fresh";
+          $("keys-aha").textContent = `Шукаємо «${topic}», а ключ лишився ${key}. На екрані старі дані: Query не бачить змінну всередині queryFn.`;
+          renderKeys();
+          busy.keys = false;
+          $("keys-go").disabled = false;
+          return;
+        }
+
+        if (cached) {
+          cached.status = "fetching";
+          keyView.events = cached.events;
+          keyView.isLoading = false;
+          keyView.isFetching = true;
+          keyView.isSuccess = true;
+          $("keys-aha").textContent = "Цей ключ уже є. Список показано одразу, мережа оновлює його у фоні.";
+          renderKeys();
+          const row = track("query", `GET /events?title=${topic}`);
+          await sleep(DELAY);
+          row.ok();
+          cached.status = "fresh";
+          keyView.isFetching = false;
+        } else {
+          keyView.events = null;
+          keyView.isLoading = true;
+          keyView.isFetching = true;
+          keyView.isSuccess = false;
+          renderKeys();
+          const row = track("query", `GET /events?title=${topic === "all" ? "" : topic}`);
+          await sleep(DELAY);
+          row.ok();
+          keyCache.set(key, { events: CATALOG[topic], status: "fresh" });
+          keyView.events = CATALOG[topic];
+          keyView.isLoading = false;
+          keyView.isFetching = false;
+          keyView.isSuccess = true;
+          $("keys-aha").textContent = keyMode === "broken"
+            ? "Перший запит ліг у кеш під ['events']. Змініть тему на node і натисніть «Знайти» — список не зміниться."
+            : `Новий ключ ${key}. Поверніться до вже знайденої теми — вона відкриється з кешу.`;
+        }
+
+        busy.keys = false;
+        $("keys-go").disabled = false;
+        renderKeys();
+      }
+
+      $("keys-go").addEventListener("click", runSearch);
+
+      const pageCache = new Map();
+      const plain = { page: null, events: null, isLoading: false, isFetching: false };
+      const keep = { page: null, events: null, isLoading: false, isFetching: false, previous: false, shownPage: null };
+
+      function renderPages() {
+        flag("p-loading", plain.isLoading);
+        flag("p-fetching", plain.isFetching);
+        flag("kpp-loading", keep.isLoading);
+        flag("kpp-fetching", keep.isFetching);
+        $("plain-list").innerHTML = plain.isLoading ? skeletons() : tickets(plain.events, { empty: "оберіть сторінку" });
+        $("keep-list").innerHTML = keep.isLoading ? skeletons() : tickets(keep.events, { dim: keep.previous, empty: "оберіть сторінку" });
+        $("keep-note").textContent = keep.previous
+          ? `На екрані ще сторінка ${keep.shownPage}. Нова, ${keep.page}, їде у фоні.`
+          : keep.isLoading
+            ? `Завантажуємо сторінку ${keep.page}.`
+            : keep.events
+              ? `На екрані сторінка ${keep.page}.`
+              : "Оберіть сторінку.";
+        document.querySelectorAll("#pager button").forEach((button) => {
+          button.setAttribute("aria-pressed", button.dataset.page === String(plain.page) ? "true" : "false");
+          button.disabled = busy.pages;
+        });
+        const rows = [];
+        if (keep.isFetching && !pageCache.has(keep.page)) {
+          rows.push({ key: `['events', '', ${keep.page}]`, status: "fetching" });
+        }
+        pageCache.forEach((value, page) => {
+          rows.push({ key: `['events', '', ${page}]`, status: value.status });
+        });
+        cacheRows($("pages-cache"), rows, "кеш порожній");
+      }
+
+      async function loadPage(page) {
+        if (busy.pages) return;
+        busy.pages = true;
+        const cached = pageCache.get(page);
+        plain.page = page;
+        plain.isFetching = true;
+        plain.isLoading = !cached;
+        plain.events = cached ? cached.events : null;
+
+        keep.page = page;
+        keep.isFetching = true;
+        keep.previous = !cached && Boolean(keep.events);
+        keep.shownPage = keep.previous ? keep.shownPage : page;
+        keep.isLoading = !cached && !keep.events;
+        if (cached) keep.events = cached.events;
+        renderPages();
+
+        if (cached) {
+          track("query", `['events', '', ${page}]`).hit("кеш");
+          plain.isFetching = false;
+          plain.isLoading = false;
+          keep.isFetching = false;
+          keep.previous = false;
+          keep.shownPage = page;
+          cached.status = "success";
+          $("pages-aha").textContent = `Сторінка ${page} вже в кеші — обидва списки на місці миттєво. Кожна сторінка має свій ключ, вони не затирають одна одну.`;
+        } else {
+          const row = track("query", `GET /events?page=${page}`);
+          $("pages-aha").textContent = keep.previous
+            ? "Новий ключ ще без даних. Зліва isLoading і порожнеча. Справа isLoading = false: на екрані попередня сторінка."
+            : "Перший ключ цієї сторінки. Показувати ще нічого, тож обидва варіанти чекають.";
+          await sleep(DELAY);
+          row.ok();
+          pageCache.set(page, { events: PAGES[page], status: "success" });
+          plain.events = PAGES[page];
+          plain.isLoading = false;
+          plain.isFetching = false;
+          keep.events = PAGES[page];
+          keep.isLoading = false;
+          keep.isFetching = false;
+          keep.previous = false;
+          keep.shownPage = page;
+          if (page === 1) {
+            $("pages-aha").textContent = "Сторінка 1 в кеші. Натисніть «Сторінка 2» і порівняйте колонки в момент очікування.";
+          }
+        }
+
+        busy.pages = false;
+        renderPages();
+      }
+
+      document.querySelectorAll("#pager button").forEach((button) => {
+        button.addEventListener("click", () => loadPage(Number(button.dataset.page)));
+      });
+
+      let shareMounted = false;
+      let shareCache = null;
+      let shareObservers = 0;
+      let shareManualCount = 0;
+      let shareQueryCount = 0;
+      const shareView = {
+        manual: null,
+        query: null,
+        manualLoading: false,
+        queryLoading: false,
+      };
+
+      function renderShare() {
+        $("share-m-count").textContent = String(shareManualCount);
+        $("share-q-count").textContent = String(shareQueryCount);
+        $("share-mount").disabled = busy.share;
+        $("share-unmount").disabled = busy.share || !shareMounted;
+        if (!shareMounted) {
+          $("share-manual").innerHTML = '<p class="ghost">App і Sidebar розмонтовані. Їхній useState зник.</p>';
+          $("share-query").innerHTML = '<p class="ghost">Компоненти розмонтовані. Кеш QueryClient на місці.</p>';
+        } else {
+          const block = (title, events, loading) => `
+            <p class="meta">${title}</p>
+            ${loading ? skeletons() : tickets(events, { empty: "немає даних" })}`;
+          $("share-manual").innerHTML = block("App", shareView.manual, shareView.manualLoading) + block("Sidebar", shareView.manual, shareView.manualLoading);
+          $("share-query").innerHTML = block("App", shareView.query, shareView.queryLoading) + block("Sidebar", shareView.query, shareView.queryLoading);
+        }
+        const rows = [];
+        if (shareView.queryLoading && !shareCache) {
+          rows.push({ key: `['events'] · observers ${shareObservers}`, status: "fetching" });
+        } else if (shareCache) {
+          rows.push({ key: `['events'] · observers ${shareObservers}`, status: shareView.queryLoading ? "fetching" : "fresh" });
+        }
+        cacheRows($("share-cache"), rows, "кеш порожній — компоненти ще нічого не питали");
+      }
+
+      async function mountShare() {
+        if (busy.share) return;
+        busy.share = true;
+        const cached = shareCache;
+        shareMounted = true;
+        shareObservers = 2;
+        shareView.manual = null;
+        shareView.manualLoading = true;
+        shareView.query = cached;
+        shareView.queryLoading = !cached;
+        shareManualCount += 2;
+        renderShare();
+        const appRow = track("manual", "GET /events · App");
+        const sideRow = track("manual", "GET /events · Sidebar");
+        let queryRow = null;
+        if (cached) {
+          track("query", "['events'] · App + Sidebar").hit("кеш");
+        } else {
+          shareQueryCount += 1;
+          queryRow = track("query", "GET /events · ['events']");
+          renderShare();
+        }
+        await sleep(cached ? 250 : DELAY);
+        if (!cached && queryRow) queryRow.ok();
+        appRow.ok();
+        sideRow.ok();
+        const data = CATALOG.all.slice(0, 3);
+        shareCache = data;
+        shareView.manual = data;
+        shareView.manualLoading = false;
+        shareView.query = data;
+        shareView.queryLoading = false;
+        $("share-aha").textContent = cached
+          ? "Змонтували знову. Два ефекти пішли в мережу. Query віддав ['events'] із кешу обом компонентам одразу."
+          : "Два підписники, один ключ, один запит. Розмонтуйте компоненти: кеш має лишитись.";
+        busy.share = false;
+        renderShare();
+      }
+
+      function unmountShare() {
+        if (busy.share || !shareMounted) return;
+        shareMounted = false;
+        shareObservers = 0;
+        shareView.manual = null;
+        shareView.query = null;
+        shareView.manualLoading = false;
+        shareView.queryLoading = false;
+        $("share-aha").textContent = "Компоненти зникли разом із локальним станом. Запис ['events'] лишився в QueryClient. Змонтуйте їх знову.";
+        renderShare();
+      }
+
+      $("share-mount").addEventListener("click", mountShare);
+      $("share-unmount").addEventListener("click", unmountShare);
+
+      let modalCity = null;
+      const cityCache = new Map();
+      const cityView = { events: null, loading: false };
+
+      function renderCity() {
+        $("enabled-flag").textContent = `enabled: ${modalCity ? "true" : "false"}`;
+        $("modal-title").textContent = modalCity ? `Піду · ${modalCity}` : "Модалка закрита";
+        $("similar-list").innerHTML = !modalCity
+          ? '<p class="empty">запит не створений: enabled = false</p>'
+          : cityView.loading
+            ? skeletons()
+            : tickets(cityView.events, { empty: "немає схожих подій" });
+        document.querySelectorAll("[data-city]").forEach((button) => {
+          button.disabled = busy.city;
+        });
+        const rows = [];
+        if (cityView.loading && modalCity && !cityCache.has(modalCity)) {
+          rows.push({ key: `['events', 'byLocation', '${modalCity}']`, status: "fetching" });
+        }
+        cityCache.forEach((value, city) => {
+          rows.push({ key: `['events', 'byLocation', '${city}']`, status: "fresh" });
+        });
+        cacheRows($("city-cache"), rows, "порожньо, доки модалка закрита");
+      }
+
+      async function openCity(city) {
+        if (busy.city) return;
+        modalCity = city;
+        const cached = cityCache.get(city);
+        if (cached) {
+          cityView.events = cached;
+          cityView.loading = false;
+          track("query", `['events', 'byLocation', '${city}']`).hit("кеш");
+          $("city-aha").textContent = `${city} вже запитували. Модалка відкрилась одразу з кешу, без другого очікування.`;
+          renderCity();
+          return;
+        }
+        busy.city = true;
+        cityView.events = null;
+        cityView.loading = true;
+        $("city-aha").textContent = `enabled став true, бо pendingEvent є. Ключ містить місто «${city}».`;
+        renderCity();
+        const row = track("query", `GET /events?location=${city}`);
+        await sleep(DELAY);
+        row.ok();
+        cityCache.set(city, CITIES[city]);
+        if (modalCity === city) {
+          cityView.events = CITIES[city];
+          cityView.loading = false;
+        }
+        busy.city = false;
+        renderCity();
+      }
+
+      function closeCity() {
+        modalCity = null;
+        cityView.loading = false;
+        cityView.events = null;
+        $("city-aha").textContent = "Модалка закрита, enabled = false. Хук лишився в компоненті, нового запиту немає. Кеш міст на місці.";
+        renderCity();
+      }
+
+      document.querySelectorAll("[data-city]").forEach((button) => {
+        button.addEventListener("click", () => openCity(button.dataset.city));
+      });
+      $("city-close").addEventListener("click", closeCity);
+
+      const reactEvents = "React Meetup, TypeScript Live";
+      const nodeEvents = "Node Night";
+      const FLOW = {
+        first: [
+          { on: ["ui"], app: "чекає на data", side: "чекає на data", key: "['events', 'react']", now: "useQuery в App і Sidebar", text: "Обидва компоненти підписались на один ключ. Запиту ще немає: спершу Query дивиться в кеш." },
+          { on: ["ui", "cache"], pipe: "to-cache", dir: "fwd", app: "чекає на data", side: "чекає на data", key: "['events', 'react']", now: "ключ їде в QueryClient", text: "У кеш потрапляє ключ, не змінні з тіла queryFn. Бібліотека не зазирає всередину функції." },
+          { on: ["cache"], app: "чекає на data", side: "чекає на data", key: "['events', 'react']", now: "промах кешу", text: "Під ['events', 'react'] порожньо. Це інший запис, ніж ключ ['events'] без topic." },
+          { on: ["cache", "fn"], pipe: "to-fn", dir: "fwd", app: "чекає на data", side: "чекає на data", key: "['events', 'react']", now: "один queryFn на двох", text: "fetchEvents лишається звичайною axios-функцією. Query вирішує лише коли її викликати — тут один раз на двох підписників." },
+          { on: ["fn", "server"], pipe: "to-server", dir: "fwd", http: true, app: "чекає на data", side: "чекає на data", key: "['events', 'react']", now: "GET /events?title=react", text: "HTTP іде на бекенд. Компоненти axios не викликають." },
+          { on: ["server", "cache"], pipe: "to-server", dir: "back", http: true, app: "чекає на data", side: "чекає на data", key: "['events', 'react']", slots: [["['events', 'react']", "fresh"]], now: "відповідь сідає в кеш", text: "Дані належать кешу QueryClient. У useState компонента їх немає." },
+          { on: ["cache", "ui"], pipe: "to-cache", dir: "back", app: reactEvents, side: reactEvents, has: true, key: "['events', 'react']", slots: [["['events', 'react']", "fresh"]], now: "data в App і Sidebar", text: "Один політ у мережу. Обидва екрани малюють той самий запис кешу." },
+        ],
+        hit: [
+          { on: ["ui"], app: reactEvents, side: reactEvents, has: true, key: "['events', 'react']", slots: [["['events', 'react']", "fresh"]], now: "той самий ключ", text: "Компоненти знову просять ['events', 'react']. Запис у кеші вже є." },
+          { on: ["ui", "cache"], pipe: "to-cache", dir: "fwd", app: reactEvents, side: reactEvents, has: true, key: "['events', 'react']", slots: [["['events', 'react']", "fresh"]], now: "запит ключа в кеш", text: "Query порівнює ключ. Збігся — це ті самі дані." },
+          { on: ["cache", "ui"], pipe: "to-cache", dir: "back", app: reactEvents, side: reactEvents, has: true, key: "['events', 'react']", slots: [["['events', 'react']", "fresh"]], now: "влучення, без очікування", text: "data повертається одразу. Мережа на цьому кроці мовчить, екран не порожніє." },
+          { on: ["cache", "fn", "server"], pipe: "to-server", dir: "fwd", http: true, app: reactEvents, side: reactEvents, has: true, key: "['events', 'react']", slots: [["['events', 'react']", "fetching"]], now: "тихий refetch", text: "За замовчуванням staleTime дорівнює 0, тож у фоні йде оновлення. isLoading = false, список на місці." },
+          { on: ["server", "cache", "ui"], pipe: "to-server", dir: "back", http: true, app: reactEvents, side: reactEvents, has: true, key: "['events', 'react']", slots: [["['events', 'react']", "fresh"]], now: "кеш оновлено у фоні", text: "Свіжа відповідь замінила запис у кеші. Картки не зникали." },
+        ],
+        newkey: [
+          { on: ["ui"], topic: true, app: reactEvents, side: reactEvents, has: true, key: "['events', 'react']", slots: [["['events', 'react']", "fresh"]], now: "topic змінився локально", text: "topic — локальний стан, намір користувача. Сам по собі він на бекенд не їде." },
+          { on: ["ui", "cache"], topic: true, pipe: "to-cache", dir: "fwd", app: "чекає новий ключ", side: "чекає новий ключ", key: "['events', 'node']", slots: [["['events', 'react']", "fresh"]], now: "у ключ увійшов новий topic", text: "Усе, від чого залежить відповідь, має бути в queryKey. Інакше кеш віддасть старі дані." },
+          { on: ["cache"], topic: true, app: "чекає новий ключ", side: "чекає новий ключ", key: "['events', 'node']", slots: [["['events', 'react']", "fresh"], ["['events', 'node']", "miss"]], now: "новий ключ — промах", text: "Старий запис лишився на полиці. Новий ключ порожній, тож це інший запит." },
+          { on: ["fn", "server"], topic: true, pipe: "to-server", dir: "fwd", http: true, app: "чекає новий ключ", side: "чекає новий ключ", key: "['events', 'node']", slots: [["['events', 'react']", "fresh"], ["['events', 'node']", "fetching"]], now: "GET /events?title=node", text: "Мережа їде лише за новим ключем. React Meetup у кеші ніхто не стирає." },
+          { on: ["cache", "ui"], topic: true, pipe: "to-cache", dir: "back", app: nodeEvents, side: nodeEvents, has: true, key: "['events', 'node']", slots: [["['events', 'react']", "fresh"], ["['events', 'node']", "fresh"]], now: "два записи в кеші", text: "Повернутись на react — знову миттєво. Кожен ключ живе окремо." },
+        ],
+        manual: [
+          { on: ["ui"], app: "ефект стартував", side: "ще не змонтований", key: "ключа немає", now: "useEffect лише в App", text: "Без Query кожен компонент везе дані сам. Спільної полиці немає.", manual: true },
+          { on: ["ui", "fn", "server"], pipe: "to-server", dir: "fwd", http: true, app: "ефект стартував", side: "ще не змонтований", key: "ключа немає", now: "перший GET з App", text: "Ефект викликає fetchEvents і чекає. Sidebar про цей запит не знає.", manual: true },
+          { on: ["server", "ui"], pipe: "to-server", dir: "back", http: true, app: reactEvents, side: "ще не змонтований", hasApp: true, key: "ключа немає", now: "setEvents лише в App", text: "Відповідь лягає в useState цього компонента. Розмонтувати App — копія зникне.", manual: true },
+          { on: ["ui"], app: reactEvents, side: "свій ефект", hasApp: true, key: "ключа немає", now: "Sidebar питає окремо", text: "Другий компонент не бачить чужий useState, тож запускає власний ефект.", manual: true },
+          { on: ["ui", "fn", "server"], pipe: "to-server", dir: "fwd", http: true, app: reactEvents, side: "свій ефект", hasApp: true, key: "ключа немає", now: "другий GET", text: "Той самий список їде мережею ще раз.", manual: true },
+          { on: ["server", "ui"], pipe: "to-server", dir: "back", http: true, app: reactEvents, side: reactEvents, has: true, key: "ключа немає", now: "дві копії, два запити", text: "Обидва екрани показують дані, але це два окремі стани. Кеш їх не зшиває.", manual: true },
+        ],
+      };
+      const FLOW_INTRO = {
+        first: "Серверні дані їдуть у кеш QueryClient. Компонент лише підписується на ключ і малює те, що кеш йому віддає.",
+        hit: "Той самий ключ уже в кеші. Дані повертаються одразу, мережа може оновити їх тихо.",
+        newkey: "topic живе в useState. У потік сервера він потрапляє лише як частина queryKey.",
+        manual: "Без кешу кожен useEffect привозить копію лише у свій компонент.",
+      };
+
+      let flowScenario = "first";
+      let flowIndex = -1;
+      let flowTimer = null;
+
+      function stopFlow() {
+        clearInterval(flowTimer);
+        flowTimer = null;
+        $("flow-play").textContent = "Пустити потік";
+      }
+
+      function renderFlow() {
+        const steps = FLOW[flowScenario];
+        const step = steps[flowIndex] || null;
+        const manual = flowScenario === "manual";
+        document.querySelectorAll("#flow-board .station").forEach((node) => {
+          const name = node.dataset.node;
+          node.classList.toggle("on", Boolean(step && step.on.includes(name)));
+          node.classList.toggle("off", manual && name === "cache");
+        });
+        document.querySelectorAll("#flow-board .pipe").forEach((pipe) => {
+          pipe.classList.remove("fwd", "back");
+        });
+        if (step && step.pipe) {
+          const pipe = document.querySelector(`#flow-board .pipe[data-pipe="${step.pipe}"]`);
+          if (pipe) {
+            void pipe.offsetWidth;
+            pipe.classList.add(step.dir === "back" ? "back" : "fwd");
+          }
+        }
+        $("flow-cache-title").textContent = manual ? "Спільного кешу немає" : "Кеш";
+        $("flow-fn-title").textContent = manual ? "axios в ефекті" : "queryFn";
+        $("flow-fn-tag").textContent = manual ? "useEffect" : "ваш код";
+        $("flow-fn-note").textContent = manual ? "кожен компонент викликає fetchEvents сам" : "fetchEvents лишається axios-функцією";
+        $("flow-key").textContent = step ? step.key : manual ? "ключа немає" : "ключ зʼявиться на першому кроці";
+        $("flow-aha").textContent = step ? step.text : FLOW_INTRO[flowScenario];
+        $("flow-now").textContent = step ? step.now : "Оберіть сценарій і пустіть потік.";
+        $("flow-topic").classList.toggle("on", Boolean(step && step.topic));
+        const http = steps.slice(0, flowIndex + 1).filter((item) => item.http && item.dir !== "back").length;
+        $("flow-http").textContent = `HTTP: ${http}`;
+        const paintObs = (id, label, has) => {
+          const node = $(id);
+          node.classList.toggle("has", Boolean(has));
+          node.querySelector("em").textContent = label;
+        };
+        paintObs("obs-app", step ? step.app : "немає data", step && (step.has || step.hasApp));
+        paintObs("obs-side", step ? step.side : "немає data", step && step.has);
+        const slots = $("flow-slots");
+        slots.replaceChildren();
+        (step && step.slots ? step.slots : []).forEach(([key, status]) => {
+          const line = document.createElement("div");
+          line.className = "slot";
+          const code = document.createElement("code");
+          code.textContent = key;
+          const badge = document.createElement("span");
+          badge.className = "badge " + (status === "miss" ? "stale" : status);
+          badge.textContent = status;
+          line.append(code, badge);
+          slots.append(line);
+        });
+        const log = $("flow-log");
+        log.replaceChildren();
+        steps.forEach((item, index) => {
+          const li = document.createElement("li");
+          li.className = index <= flowIndex ? "done" : "wait";
+          li.textContent = `${index + 1}. ${item.now}`;
+          log.append(li);
+        });
+      }
+
+      function advanceFlow() {
+        const steps = FLOW[flowScenario];
+        if (flowIndex >= steps.length - 1) return;
+        flowIndex += 1;
+        renderFlow();
+      }
+
+      function playFlow() {
+        if (flowTimer) {
+          stopFlow();
+          return;
+        }
+        if (flowIndex >= FLOW[flowScenario].length - 1) flowIndex = -1;
+        $("flow-play").textContent = "Зупинити";
+        advanceFlow();
+        flowTimer = setInterval(() => {
+          if (flowIndex >= FLOW[flowScenario].length - 1) {
+            stopFlow();
+            return;
+          }
+          advanceFlow();
+          if (flowIndex >= FLOW[flowScenario].length - 1) stopFlow();
+        }, 900);
+      }
+
+      document.querySelectorAll("[data-flow]").forEach((button) => {
+        button.addEventListener("click", () => {
+          stopFlow();
+          flowScenario = button.dataset.flow;
+          flowIndex = -1;
+          document.querySelectorAll("[data-flow]").forEach((item) => {
+            item.setAttribute("aria-pressed", item === button ? "true" : "false");
+          });
+          renderFlow();
+        });
+      });
+      $("flow-play").addEventListener("click", playFlow);
+      $("flow-step").addEventListener("click", () => {
+        stopFlow();
+        if (flowIndex >= FLOW[flowScenario].length - 1) flowIndex = -1;
+        advanceFlow();
+      });
+
+      renderFlow();
+      resetFresh();
+      renderRoutine();
+      renderKeys();
+      renderPages();
+      renderShare();
+      renderCity();
+    </script>
+  </body>
+</html>

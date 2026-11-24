@@ -7,10 +7,11 @@ import type { Event } from './types';
 
 interface EventCardProps {
   event: Event;
-  onToggleGoing: (id: string) => void;
+  // Тепер картка не змінює going напряму, а ПРОСИТЬ підтвердження.
+  onRequestToggle: (event: Event) => void;
 }
 
-export default function EventCard({ event, onToggleGoing }: EventCardProps) {
+export default function EventCard({ event, onRequestToggle }: EventCardProps) {
   // isExpanded лишається ЛОКАЛЬНИМ — він потрібен лише цій картці
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -31,7 +32,7 @@ export default function EventCard({ event, onToggleGoing }: EventCardProps) {
 
       {/* going піднято в App — картка лише повідомляє про намір змінити */}
       <label className={css.going}>
-        <input type="checkbox" checked={event.going} onChange={() => onToggleGoing(event.id)} />
+        <input type="checkbox" checked={event.going} onChange={() => onRequestToggle(event)} />
         {event.going ? '✅ Йду' : 'Піду'}
       </label>
 

@@ -1,48 +1,84 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import EventCard from './EventCard';
+import EventSearchForm from './EventSearchForm';
 import AddEventForm from './AddEventForm';
+import type { DraftEvent } from './AddEventForm';
 import Button from './Button';
 import css from './App.module.css';
 import type { Event } from './types';
-import type { DraftEvent } from './AddEventForm';
-import EventSearchForm from './EventSearchForm';
-import { fetchEvents } from './services/eventService';
+import { fetchEvents, fetchEventsByLocation } from './services/eventService';
+import Modal from './Modal';
+import SimilarEvents from './SimilarEvents';
+import Pagination from './Pagination';
+// import EventFeed from './EventFeed';
 
 export default function App() {
-  const [events, setEvents] = useState<Event[]>([]);
+  const [topic, setTopic] = useState(() => {
+    const saved = window.localStorage.getItem('event-planner-topic');
+    return saved !== null ? (JSON.parse(saved) as string) : '';
+  });
+  const [currentPage, setCurrentPage] = useState(1);
   const [isFormOpen, setIsFormOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isError, setIsError] = useState(false);
+  const [pendingEvent, setPendingEvent] = useState<Event | null>(null);
+  // Позначки «Піду» — ЛОКАЛЬНИЙ стан. Дані з сервера ми поки лише читаємо.
+  const [goingIds, setGoingIds] = useState<string[]>([]);
 
-  const handleSearch = async (topic: string) => {
-    try {
-      setIsLoading(true);
-      // Скидаємо помилку перед КОЖНИМ запитом, а не лише в catch
-      setIsError(false);
+  // У ключі — і тема, і сторінка: кожна сторінка кешується окремо
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ['events', topic, currentPage],
+    queryFn: () => fetchEvents(topic, currentPage),
+    // Показуємо попередню сторінку, поки вантажиться нова — без «блимання»
+    placeholderData: keepPreviousData,
+  });
 
-      const data = await fetchEvents(topic);
-      setEvents(data);
-    } catch {
-      setIsError(true);
-    } finally {
-      // finally виконається за будь-якого результату
-      setIsLoading(false);
-    }
+  // Місце події, для якої відкрито модалку. Порожній рядок = модалка закрита.
+  const pendingLocation = pendingEvent?.location ?? '';
+
+  // Залежний запит: хук змонтований завжди, але виконується лише тоді,
+  // коли є подія для підтвердження.
+  const { data: similarEvents, isLoading: isSimilarLoading } = useQuery({
+    queryKey: ['events', 'byLocation', pendingLocation],
+    queryFn: () => fetchEventsByLocation(pendingLocation),
+    enabled: pendingEvent !== null,
+  });
+
+  // Ефект збереження пошуку лишається: topic — локальний стан, не серверний
+  useEffect(() => {
+    localStorage.setItem('event-planner-topic', JSON.stringify(topic));
+  }, [topic]);
+
+  // Накладаємо локальні позначки «Піду» на дані, що прийшли з сервера
+  const totalPages = data?.totalPages ?? 0;
+
+  const events: Event[] = (data?.events ?? []).map((event) => ({
+    ...event,
+    going: goingIds.includes(event.id),
+  }));
+
+  const handleSearch = (nextTopic: string) => {
+    setTopic(nextTopic);
+    // Новий пошук — завжди з першої сторінки
+    setCurrentPage(1);
   };
 
   const handleToggleGoing = (id: string) => {
-    setEvents(events.map((event) => (event.id === id ? { ...event, going: !event.going } : event)));
+    setGoingIds(
+      goingIds.includes(id) ? goingIds.filter((goingId) => goingId !== id) : [...goingIds, id],
+    );
+  };
+
+  const handleConfirmToggle = () => {
+    if (pendingEvent) {
+      handleToggleGoing(pendingEvent.id);
+    }
+    setPendingEvent(null);
   };
 
   const handleAddEvent = (draft: DraftEvent) => {
-    const newEvent: Event = {
-      ...draft,
-      id: crypto.randomUUID(),
-      isOnline: draft.location.toLowerCase() === 'online',
-      going: false,
-    };
-
-    setEvents([newEvent, ...events]);
+    // ⚠️ Тимчасово. Список тепер належить серверу, тож нову подію треба
+    // відправити на бекенд POST-запитом — це мутація, тема заняття 7.
+    console.log('Нова подія:', draft);
     setIsFormOpen(false);
   };
 
@@ -52,10 +88,7 @@ export default function App() {
     <>
       <h1>Найближчі події</h1>
 
-      <EventSearchForm onSearch={handleSearch} />
-
-      {isLoading && <p>Завантажуємо події, зачекайте…</p>}
-      {isError && <p>Ой, щось пішло не так! Спробуйте ще раз.</p>}
+      <EventSearchForm initialTopic={topic} onSearch={handleSearch} />
 
       <div className={css.toolbar}>
         <p>
@@ -68,13 +101,57 @@ export default function App() {
         />
       </div>
 
-      {isFormOpen && <AddEventForm onAdd={handleAddEvent} />}
+      {isFormOpen && (
+        <>
+          <AddEventForm onAdd={handleAddEvent} />
+          <p className={css.notice}>
+            Створення події поки не зберігається на сервері — для цього потрібна мутація. Це тема
+            заняття 7.
+          </p>
+        </>
+      )}
 
-      <div className={css.cards}>
-        {events.map((event) => (
-          <EventCard key={event.id} event={event} onToggleGoing={handleToggleGoing} />
-        ))}
-      </div>
+      {isLoading && <p>Завантажуємо події, зачекайте…</p>}
+      {isError && <p>Ой, щось пішло не так: {error.message}</p>}
+
+      {totalPages > 1 && (
+        <Pagination
+          totalPages={totalPages}
+          currentPage={currentPage}
+          onPageChange={setCurrentPage}
+        />
+      )}
+
+      {events.length > 0 && (
+        <div className={css.cards}>
+          {events.map((event) => (
+            <EventCard key={event.id} event={event} onRequestToggle={setPendingEvent} />
+          ))}
+        </div>
+      )}
+      {/* <EventFeed /> */}
+
+      {pendingEvent && (
+        <Modal onClose={() => setPendingEvent(null)}>
+          <h2>{pendingEvent.going ? 'Скасувати участь?' : 'Підтвердити участь?'}</h2>
+          <p>{pendingEvent.title}</p>
+
+          <SimilarEvents
+            events={similarEvents ?? []}
+            isLoading={isSimilarLoading}
+            currentId={pendingEvent.id}
+          />
+
+          <div className={css.modalActions}>
+            <Button variant="secondary" text="Скасувати" onClick={() => setPendingEvent(null)} />
+            <Button
+              variant="primary"
+              text={pendingEvent.going ? 'Так, не піду' : 'Так, піду'}
+              onClick={handleConfirmToggle}
+            />
+          </div>
+        </Modal>
+      )}
     </>
   );
 }

@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import Button from './Button';
 import css from './AddEventForm.module.css';
 
@@ -13,6 +14,8 @@ interface AddEventFormProps {
 }
 
 export default function AddEventForm({ onAdd }: AddEventFormProps) {
+  const fieldId = useId();
+
   const handleSubmit = (formData: FormData) => {
     const draft: DraftEvent = {
       title: formData.get('title') as string,
@@ -28,10 +31,18 @@ export default function AddEventForm({ onAdd }: AddEventFormProps) {
 
   return (
     <form className={css.form} action={handleSubmit}>
-      <input type="text" name="title" placeholder="Назва події" />
-      <input type="text" name="date" placeholder="Дата, напр. 01.08.2026" />
-      <input type="text" name="location" placeholder="Місце проведення" />
-      <textarea name="description" placeholder="Опис події" />
+      <label htmlFor={`${fieldId}-title`}>Назва події</label>
+      <input type="text" name="title" id={`${fieldId}-title`} />
+
+      <label htmlFor={`${fieldId}-date`}>Дата</label>
+      <input type="text" name="date" id={`${fieldId}-date`} placeholder="01.08.2026" />
+
+      <label htmlFor={`${fieldId}-location`}>Місце проведення</label>
+      <input type="text" name="location" id={`${fieldId}-location`} />
+
+      <label htmlFor={`${fieldId}-description`}>Опис</label>
+      <textarea name="description" id={`${fieldId}-description`} />
+
       <Button variant="primary" text="Зберегти подію" />
     </form>
   );
